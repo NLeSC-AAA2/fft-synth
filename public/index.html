@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>FFT Synthesis</title>
+  <style type="text/css">
+      code{white-space: pre-wrap;}
+      span.smallcaps{font-variant: small-caps;}
+      span.underline{text-decoration: underline;}
+      div.column{display: inline-block; vertical-align: top; width: 50%;}
+  </style>
+  <style type="text/css">
+a.sourceLine { display: inline-block; line-height: 1.25; }
+a.sourceLine { pointer-events: none; color: inherit; text-decoration: inherit; }
+a.sourceLine:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode { white-space: pre; position: relative; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+code.sourceCode { white-space: pre-wrap; }
+a.sourceLine { text-indent: -1em; padding-left: 1em; }
+}
+pre.numberSource a.sourceLine
+  { position: relative; left: -4em; }
+pre.numberSource a.sourceLine::before
+  { content: attr(title);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; pointer-events: all; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+    color: #aaaaaa;
+  }
+pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-left: 4px; }
+div.sourceCode
+  {  }
+@media screen {
+a.sourceLine::before { text-decoration: underline; }
+}
+code span.al { color: #ff0000; font-weight: bold; } /* Alert */
+code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } /* Annotation */
+code span.at { color: #7d9029; } /* Attribute */
+code span.bn { color: #40a070; } /* BaseN */
+code span.bu { } /* BuiltIn */
+code span.cf { color: #007020; font-weight: bold; } /* ControlFlow */
+code span.ch { color: #4070a0; } /* Char */
+code span.cn { color: #880000; } /* Constant */
+code span.co { color: #60a0b0; font-style: italic; } /* Comment */
+code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } /* CommentVar */
+code span.do { color: #ba2121; font-style: italic; } /* Documentation */
+code span.dt { color: #902000; } /* DataType */
+code span.dv { color: #40a070; } /* DecVal */
+code span.er { color: #ff0000; font-weight: bold; } /* Error */
+code span.ex { } /* Extension */
+code span.fl { color: #40a070; } /* Float */
+code span.fu { color: #06287e; } /* Function */
+code span.im { } /* Import */
+code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Information */
+code span.kw { color: #007020; font-weight: bold; } /* Keyword */
+code span.op { color: #666666; } /* Operator */
+code span.ot { color: #007020; } /* Other */
+code span.pp { color: #bc7a00; } /* Preprocessor */
+code span.sc { color: #4070a0; } /* SpecialChar */
+code span.ss { color: #bb6688; } /* SpecialString */
+code span.st { color: #4070a0; } /* String */
+code span.va { color: #19177c; } /* Variable */
+code span.vs { color: #4070a0; } /* VerbatimString */
+code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
+  </style>
+  <link rel="stylesheet" href="style.css" />
+  <script src="/usr/share/javascript/mathjax/MathJax.js?config=TeX-AMS_CHTML-full" type="text/javascript"></script>
+  <link href="https://fonts.googleapis.com/css?family=Dosis" rel="stylesheet">
+</head>
+<body>
+<header>
+<h1 class="title">FFT Synthesis</h1>
+</header>
+<nav id="TOC">
+<ul>
+<li><a href="#array-arithmetic">Array arithmetic</a><ul>
+<li><a href="#numeric-types">Numeric types</a></li>
+<li><a href="#array-structure">Array structure</a></li>
+<li><a href="#array-methods">Array methods</a></li>
+</ul></li>
+<li><a href="#codelets">Codelets</a></li>
+<li><a href="#abstract-syntax-tree">Abstract Syntax Tree</a></li>
+<li><a href="#miscellaneous-functions">Miscellaneous functions</a><ul>
+<li><a href="#list-manipulation">List manipulation</a></li>
+</ul></li>
+<li><a href="#unit-tests">Unit tests</a></li>
+</ul>
+</nav>
+<h2 id="array-arithmetic">Array arithmetic</h2>
+<p>We will express different stages of the FFT by applying a vectorised FFT on a multi-dimensional strided numeric array.</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb1-1" title="1"><span class="ot">{-# LANGUAGE DuplicateRecordFields #-}</span></a>
+<a class="sourceLine" id="cb1-2" title="2"></a>
+<a class="sourceLine" id="cb1-3" title="3"><span class="kw">module</span> <span class="dt">Array</span> <span class="kw">where</span></a>
+<a class="sourceLine" id="cb1-4" title="4"></a>
+<a class="sourceLine" id="cb1-5" title="5"><span class="kw">import</span> <span class="dt">Data.Complex</span> (<span class="dt">Complex</span>(..))</a>
+<a class="sourceLine" id="cb1-6" title="6"><span class="kw">import</span> <span class="dt">Data.Proxy</span></a>
+<a class="sourceLine" id="cb1-7" title="7"></a>
+<a class="sourceLine" id="cb1-8" title="8"><span class="kw">import</span> <span class="dt">Data.Text</span> (<span class="dt">Text</span>)</a>
+<a class="sourceLine" id="cb1-9" title="9"><span class="kw">import</span> <span class="kw">qualified</span> <span class="dt">Data.Text</span> <span class="kw">as</span> <span class="dt">T</span></a>
+<a class="sourceLine" id="cb1-10" title="10"></a>
+<a class="sourceLine" id="cb1-11" title="11"><span class="kw">import</span> <span class="dt">Control.Monad.Except</span></a>
+<a class="sourceLine" id="cb1-12" title="12"></a>
+<a class="sourceLine" id="cb1-13" title="13"><span class="kw">import</span> <span class="dt">Lib</span></a>
+<a class="sourceLine" id="cb1-14" title="14"></a>
+<a class="sourceLine" id="cb1-15" title="15"><span class="fu">&lt;&lt;</span>array<span class="fu">-</span>list<span class="fu">-</span>manipulation<span class="fu">&gt;&gt;</span></a>
+<a class="sourceLine" id="cb1-16" title="16"><span class="fu">&lt;&lt;</span>array<span class="fu">-</span>numeric<span class="fu">-</span><span class="kw">class</span><span class="fu">&gt;&gt;</span></a>
+<a class="sourceLine" id="cb1-17" title="17"><span class="fu">&lt;&lt;</span>array<span class="fu">-</span>types<span class="fu">&gt;&gt;</span></a>
+<a class="sourceLine" id="cb1-18" title="18"><span class="fu">&lt;&lt;</span>array<span class="fu">-</span>methods<span class="fu">&gt;&gt;</span></a></code></pre></div>
+<h3 id="numeric-types">Numeric types</h3>
+<p>The <code>NumericType</code> type-class is defined so that we can constrain functions to work with <code>Float</code>, <code>Double</code> or <code>Complex a</code>. This also gives information on the byte size of each numeric type. We need to give <code>byteSize</code> an argument for it to be able to deduce the type.</p>
+<p><em>«array-numeric-class»=</em></p>
+<div class="sourceCode" id="array-numeric-class"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="array-numeric-class-1" title="1"><span class="kw">class</span> <span class="dt">NumericType</span> a <span class="kw">where</span></a>
+<a class="sourceLine" id="array-numeric-class-2" title="2"><span class="ot">    byteSize ::</span> proxy a <span class="ot">-&gt;</span> <span class="dt">Int</span></a>
+<a class="sourceLine" id="array-numeric-class-3" title="3"></a>
+<a class="sourceLine" id="array-numeric-class-4" title="4"><span class="kw">instance</span> <span class="dt">NumericType</span> <span class="dt">Float</span> <span class="kw">where</span></a>
+<a class="sourceLine" id="array-numeric-class-5" title="5">    byteSize _ <span class="fu">=</span> <span class="dv">4</span></a>
+<a class="sourceLine" id="array-numeric-class-6" title="6"></a>
+<a class="sourceLine" id="array-numeric-class-7" title="7"><span class="kw">instance</span> <span class="dt">NumericType</span> <span class="dt">Double</span> <span class="kw">where</span></a>
+<a class="sourceLine" id="array-numeric-class-8" title="8">    byteSize _ <span class="fu">=</span> <span class="dv">8</span></a>
+<a class="sourceLine" id="array-numeric-class-9" title="9"></a>
+<a class="sourceLine" id="array-numeric-class-10" title="10"><span class="kw">instance</span> (<span class="dt">NumericType</span> a) <span class="ot">=&gt;</span> <span class="dt">NumericType</span> (<span class="dt">Complex</span> a) <span class="kw">where</span></a>
+<a class="sourceLine" id="array-numeric-class-11" title="11">    byteSize _ <span class="fu">=</span> <span class="dv">2</span> <span class="fu">*</span> (byteSize (<span class="dt">Proxy</span><span class="ot"> ::</span> <span class="dt">Proxy</span> a))</a></code></pre></div>
+<h3 id="array-structure">Array structure</h3>
+<p>An array has a shape, stride and offset, in addition to a name meant to identify the array in question.</p>
+<p><em>«array-types»=</em></p>
+<div class="sourceCode" id="array-types"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="array-types-1" title="1"><span class="kw">type</span> <span class="dt">Shape</span> <span class="fu">=</span> [<span class="dt">Int</span>]</a>
+<a class="sourceLine" id="array-types-2" title="2"><span class="kw">type</span> <span class="dt">Stride</span> <span class="fu">=</span> [<span class="dt">Int</span>]</a>
+<a class="sourceLine" id="array-types-3" title="3"></a>
+<a class="sourceLine" id="array-types-4" title="4"><span class="kw">data</span> <span class="dt">Array</span> a <span class="fu">=</span> <span class="dt">Array</span></a>
+<a class="sourceLine" id="array-types-5" title="5">    {<span class="ot"> name     ::</span> <span class="dt">Text</span></a>
+<a class="sourceLine" id="array-types-6" title="6">    ,<span class="ot"> shape    ::</span> <span class="dt">Shape</span></a>
+<a class="sourceLine" id="array-types-7" title="7">    ,<span class="ot"> stride   ::</span> <span class="dt">Stride</span></a>
+<a class="sourceLine" id="array-types-8" title="8">    ,<span class="ot"> offset   ::</span> <span class="dt">Int</span> } <span class="kw">deriving</span> (<span class="dt">Show</span>)</a>
+<a class="sourceLine" id="array-types-9" title="9"></a>
+<a class="sourceLine" id="array-types-10" title="10"><span class="kw">data</span> <span class="dt">ArrayIndex</span> a <span class="fu">=</span> <span class="dt">ArrayIndex</span></a>
+<a class="sourceLine" id="array-types-11" title="11">    {<span class="ot"> name     ::</span> <span class="dt">Text</span></a>
+<a class="sourceLine" id="array-types-12" title="12">    ,<span class="ot"> index    ::</span> <span class="dt">Int</span> } <span class="kw">deriving</span> (<span class="dt">Show</span>)</a>
+<a class="sourceLine" id="array-types-13" title="13"></a>
+<a class="sourceLine" id="array-types-14" title="14"><span class="ot">floatArray ::</span> <span class="dt">Text</span> <span class="ot">-&gt;</span> <span class="dt">Shape</span> <span class="ot">-&gt;</span> <span class="dt">Array</span> <span class="dt">Float</span></a>
+<a class="sourceLine" id="array-types-15" title="15">floatArray name shape <span class="fu">=</span> <span class="dt">Array</span> name shape (fromShape shape <span class="dv">1</span>) <span class="dv">0</span></a></code></pre></div>
+<p>The stride gives the distance in memory (counted in number of items, not bytes) for a step in each axis of the array. The location in memory can be computed using the dot-product,</p>
+<p><span id="eq:strides" style="display: inline-block; position: relative; width: 100%"><span class="math display">\[{\rm location} = {\rm stride} \cdot {\rm index} + {\rm offset}.\]</span><span style="position: absolute; right: 0em; top: 50%; line-height:0; text-align: right">(1)</span></span> </p>
+<h3 id="array-methods">Array methods</h3>
+<p>Given a contiguous array of a given shape, we can compute the stride by taking the cumulative product.</p>
+<p><em>«array-methods»=</em></p>
+<div class="sourceCode" id="array-methods"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="array-methods-1" title="1"><span class="ot">fromShape ::</span> <span class="dt">Shape</span> <span class="ot">-&gt;</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">Stride</span></a>
+<a class="sourceLine" id="array-methods-2" title="2">fromShape [] _ <span class="fu">=</span> []</a>
+<a class="sourceLine" id="array-methods-3" title="3">fromShape (x<span class="fu">:</span>xs) n <span class="fu">=</span> n <span class="fu">:</span> fromShape xs (n <span class="fu">*</span> x)</a></code></pre></div>
+<h4 id="properties">Properties</h4>
+<p>Basic properties of an array: size, dimension and if the array is contiguous.</p>
+<p><em>«array-methods»=+</em></p>
+<div class="sourceCode" id="array-methods"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="array-methods-1" title="1"><span class="fu">product</span><span class="ot"> ::</span> <span class="dt">Shape</span> <span class="ot">-&gt;</span> <span class="dt">Int</span></a>
+<a class="sourceLine" id="array-methods-2" title="2"><span class="fu">product</span> xs <span class="fu">=</span> <span class="fu">foldr</span> (<span class="fu">*</span>) <span class="dv">1</span> xs</a>
+<a class="sourceLine" id="array-methods-3" title="3"></a>
+<a class="sourceLine" id="array-methods-4" title="4"><span class="ot">ndim ::</span> <span class="dt">Array</span> a <span class="ot">-&gt;</span> <span class="dt">Int</span></a>
+<a class="sourceLine" id="array-methods-5" title="5">ndim <span class="fu">=</span> <span class="fu">length</span> <span class="fu">.</span> shape</a>
+<a class="sourceLine" id="array-methods-6" title="6"></a>
+<a class="sourceLine" id="array-methods-7" title="7"><span class="ot">contiguous ::</span> <span class="dt">Array</span> a <span class="ot">-&gt;</span> <span class="dt">Bool</span></a>
+<a class="sourceLine" id="array-methods-8" title="8">contiguous <span class="dt">Array</span>{shape,stride} <span class="fu">=</span> stride <span class="fu">==</span> fromShape shape <span class="dv">1</span></a></code></pre></div>
+<h4 id="error-handling">Error handling</h4>
+<p>Methods that can fail will return a type <code>Either Text a</code>. Since that type implements the <code>MonadError</code> class we can throw errors using <code>throwError</code> and at success <code>return</code> a value. We can generalize this pattern by accepting just any <code>MonadError Text</code> type.</p>
+<p><em>«array-methods»=+</em></p>
+<div class="sourceCode" id="array-methods"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="array-methods-1" title="1"><span class="ot">rcheck ::</span> <span class="dt">MonadError</span> <span class="dt">Text</span> m <span class="ot">=&gt;</span> <span class="dt">Text</span> <span class="ot">-&gt;</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> m ()</a>
+<a class="sourceLine" id="array-methods-2" title="2">rcheck what n i</a>
+<a class="sourceLine" id="array-methods-3" title="3">    <span class="fu">|</span> (i <span class="fu">&gt;=</span> <span class="dv">0</span>) <span class="fu">&amp;&amp;</span> (i <span class="fu">&lt;</span> n) <span class="fu">=</span> <span class="fu">return</span> ()</a>
+<a class="sourceLine" id="array-methods-4" title="4">    <span class="fu">|</span> <span class="fu">otherwise</span> <span class="fu">=</span> throwError <span class="fu">$</span> <span class="st">&quot;Range check error: &quot;</span> <span class="fu">&lt;&gt;</span> what <span class="fu">&lt;&gt;</span> <span class="st">&quot; &quot;</span></a>
+<a class="sourceLine" id="array-methods-5" title="5">                      <span class="fu">&lt;&gt;</span> tshow n <span class="fu">&lt;&gt;</span> <span class="st">&quot; &quot;</span> <span class="fu">&lt;&gt;</span> tshow i</a></code></pre></div>
+<p>The <code>rcheck</code> function implements a range-check on the range <code>0 .. (n-1)</code>.</p>
+<h4 id="reshaping-slicing">Reshaping, slicing</h4>
+<p>If we have an array of complex values, we want to read out the real and imaginary parts.</p>
+<p><em>«array-methods»=+</em></p>
+<div class="sourceCode" id="array-methods"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="array-methods-1" title="1"><span class="ot">realPart ::</span> <span class="dt">Array</span> (<span class="dt">Complex</span> a) <span class="ot">-&gt;</span> <span class="dt">Array</span> a</a>
+<a class="sourceLine" id="array-methods-2" title="2">realPart array<span class="fu">@</span><span class="dt">Array</span>{stride} <span class="fu">=</span> array</a>
+<a class="sourceLine" id="array-methods-3" title="3">    { stride <span class="fu">=</span> <span class="fu">map</span> (<span class="fu">*</span> <span class="dv">2</span>) stride }</a>
+<a class="sourceLine" id="array-methods-4" title="4"></a>
+<a class="sourceLine" id="array-methods-5" title="5"><span class="ot">imagPart ::</span> <span class="dt">Array</span> (<span class="dt">Complex</span> a) <span class="ot">-&gt;</span> <span class="dt">Array</span> a</a>
+<a class="sourceLine" id="array-methods-6" title="6">imagPart array<span class="fu">@</span><span class="dt">Array</span>{stride, offset} <span class="fu">=</span> array</a>
+<a class="sourceLine" id="array-methods-7" title="7">    { stride <span class="fu">=</span> <span class="fu">map</span> (<span class="fu">*</span> <span class="dv">2</span>) stride</a>
+<a class="sourceLine" id="array-methods-8" title="8">    , offset <span class="fu">=</span> offset <span class="fu">+</span> <span class="dv">1</span> }</a></code></pre></div>
+<p>Transposing an array means reversing the shape and stride vectors</p>
+<p><em>«array-methods»=+</em></p>
+<div class="sourceCode" id="array-methods"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="array-methods-1" title="1"><span class="ot">transpose ::</span> <span class="dt">Array</span> a <span class="ot">-&gt;</span> <span class="dt">Array</span> a</a>
+<a class="sourceLine" id="array-methods-2" title="2">transpose array<span class="fu">@</span><span class="dt">Array</span>{shape, stride} <span class="fu">=</span> array</a>
+<a class="sourceLine" id="array-methods-3" title="3">    { shape <span class="fu">=</span> <span class="fu">reverse</span> shape</a>
+<a class="sourceLine" id="array-methods-4" title="4">    , stride <span class="fu">=</span> <span class="fu">reverse</span> stride }</a></code></pre></div>
+<p>Reshaping is only possible from a contiguous array. Otherwise the arithmetic of stepping through the resulting array would no longer be expressible in terms of a stride and offset.</p>
+<p><em>«array-methods»=+</em></p>
+<div class="sourceCode" id="array-methods"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="array-methods-1" title="1"><span class="ot">reshape ::</span> <span class="dt">Array</span> a <span class="ot">-&gt;</span> <span class="dt">Shape</span> <span class="ot">-&gt;</span> <span class="dt">Either</span> <span class="dt">Text</span> (<span class="dt">Array</span> a)</a>
+<a class="sourceLine" id="array-methods-2" title="2">reshape array<span class="fu">@</span><span class="dt">Array</span>{shape,stride} newShape</a>
+<a class="sourceLine" id="array-methods-3" title="3">    <span class="fu">|</span> contiguous array <span class="fu">=</span> <span class="fu">return</span> <span class="fu">$</span> array</a>
+<a class="sourceLine" id="array-methods-4" title="4">        { shape <span class="fu">=</span> newShape</a>
+<a class="sourceLine" id="array-methods-5" title="5">        , stride <span class="fu">=</span> fromShape newShape <span class="dv">1</span> }</a>
+<a class="sourceLine" id="array-methods-6" title="6">    <span class="fu">|</span> <span class="fu">otherwise</span> <span class="fu">=</span> throwError <span class="st">&quot;Cannot reshape non-contiguous array.&quot;</span></a></code></pre></div>
+<p>The <code>select</code>, <code>extrude</code>, and <code>slice</code> methods do the same as the Numpy array slice notation.</p>
+<table>
+<thead>
+<tr class="header">
+<th>Numpy</th>
+<th>Function</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>a[:,3]</code></td>
+<td><code>select a 1 3</code></td>
+<td>Select 4th column</td>
+</tr>
+<tr class="even">
+<td><code>a[3:9:2,:]</code></td>
+<td><code>slice a 0 3 9 2</code></td>
+<td>Slice rows 4, 6 and 8</td>
+</tr>
+<tr class="odd">
+<td><code>a[:,None,:]</code></td>
+<td><code>extrude a 1</code></td>
+<td>Extrude a new axis</td>
+</tr>
+</tbody>
+</table>
+<p><em>«array-methods»=+</em></p>
+<div class="sourceCode" id="array-methods"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="array-methods-1" title="1"><span class="ot">select ::</span> <span class="dt">Array</span> a <span class="ot">-&gt;</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">Either</span> <span class="dt">Text</span> (<span class="dt">Array</span> a)</a>
+<a class="sourceLine" id="array-methods-2" title="2">select array<span class="fu">@</span><span class="dt">Array</span>{shape,stride,offset} dim i <span class="fu">=</span> <span class="kw">do</span></a>
+<a class="sourceLine" id="array-methods-3" title="3">    rcheck <span class="st">&quot;dim&quot;</span> (ndim array) dim</a>
+<a class="sourceLine" id="array-methods-4" title="4">    rcheck <span class="st">&quot;size&quot;</span> (shape <span class="fu">!!</span> dim) i</a>
+<a class="sourceLine" id="array-methods-5" title="5">    <span class="fu">return</span> <span class="fu">$</span> array</a>
+<a class="sourceLine" id="array-methods-6" title="6">        { shape  <span class="fu">=</span> remove shape dim</a>
+<a class="sourceLine" id="array-methods-7" title="7">        , stride <span class="fu">=</span> remove stride dim</a>
+<a class="sourceLine" id="array-methods-8" title="8">        , offset <span class="fu">=</span> offset <span class="fu">+</span> (stride <span class="fu">!!</span> dim) <span class="fu">*</span> i }</a>
+<a class="sourceLine" id="array-methods-9" title="9"></a>
+<a class="sourceLine" id="array-methods-10" title="10"><span class="ot">extrude ::</span> <span class="dt">Array</span> a <span class="ot">-&gt;</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">Either</span> <span class="dt">Text</span> (<span class="dt">Array</span> a)</a>
+<a class="sourceLine" id="array-methods-11" title="11">extrude array<span class="fu">@</span><span class="dt">Array</span>{shape,stride} dim <span class="fu">=</span> <span class="kw">do</span></a>
+<a class="sourceLine" id="array-methods-12" title="12">    rcheck <span class="st">&quot;dim&quot;</span> (ndim array <span class="fu">+</span> <span class="dv">1</span>) dim</a>
+<a class="sourceLine" id="array-methods-13" title="13">    <span class="fu">return</span> <span class="fu">$</span> array</a>
+<a class="sourceLine" id="array-methods-14" title="14">        { shape  <span class="fu">=</span> insert shape dim <span class="dv">1</span></a>
+<a class="sourceLine" id="array-methods-15" title="15">        , stride <span class="fu">=</span> insert stride dim ((stride <span class="fu">!!</span> dim) <span class="fu">*</span> (shape <span class="fu">!!</span> dim)) }</a>
+<a class="sourceLine" id="array-methods-16" title="16"></a>
+<a class="sourceLine" id="array-methods-17" title="17"><span class="ot">slice ::</span> <span class="dt">Array</span> a <span class="ot">-&gt;</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">Either</span> <span class="dt">Text</span> (<span class="dt">Array</span> a)</a>
+<a class="sourceLine" id="array-methods-18" title="18">slice array<span class="fu">@</span><span class="dt">Array</span>{shape,stride,offset} dim a b step <span class="fu">=</span> <span class="kw">do</span></a>
+<a class="sourceLine" id="array-methods-19" title="19">    rcheck <span class="st">&quot;dim&quot;</span> (ndim array) dim</a>
+<a class="sourceLine" id="array-methods-20" title="20">    rcheck <span class="st">&quot;a&quot;</span> ((shape <span class="fu">!!</span> dim) <span class="fu">+</span> <span class="dv">1</span>) a</a>
+<a class="sourceLine" id="array-methods-21" title="21">    rcheck <span class="st">&quot;b&quot;</span> ((shape <span class="fu">!!</span> dim) <span class="fu">+</span> <span class="dv">1</span>) b</a>
+<a class="sourceLine" id="array-methods-22" title="22">    <span class="fu">return</span> <span class="fu">$</span> array</a>
+<a class="sourceLine" id="array-methods-23" title="23">        { shape  <span class="fu">=</span> replace shape  dim ((b <span class="fu">-</span> a) <span class="ot">`quot`</span> step)</a>
+<a class="sourceLine" id="array-methods-24" title="24">        , stride <span class="fu">=</span> replace stride dim ((stride <span class="fu">!!</span> dim) <span class="fu">*</span> step)</a>
+<a class="sourceLine" id="array-methods-25" title="25">        , offset <span class="fu">=</span> offset <span class="fu">+</span> (stride <span class="fu">!!</span> dim) <span class="fu">*</span> a }</a></code></pre></div>
+<h2 id="codelets">Codelets</h2>
+<p>A codelet, for the moment, is just some function that we can call.</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb2-1" title="1"><span class="kw">module</span> <span class="dt">Codelet</span> <span class="kw">where</span></a>
+<a class="sourceLine" id="cb2-2" title="2"></a>
+<a class="sourceLine" id="cb2-3" title="3"><span class="kw">import</span> <span class="dt">Data.Text</span> (<span class="dt">Text</span>)</a>
+<a class="sourceLine" id="cb2-4" title="4"><span class="kw">import</span> <span class="kw">qualified</span> <span class="dt">Data.Text</span> <span class="kw">as</span> <span class="dt">T</span></a>
+<a class="sourceLine" id="cb2-5" title="5"></a>
+<a class="sourceLine" id="cb2-6" title="6"><span class="kw">import</span> <span class="dt">Lib</span></a>
+<a class="sourceLine" id="cb2-7" title="7"><span class="kw">import</span> <span class="dt">AST</span></a>
+<a class="sourceLine" id="cb2-8" title="8"></a>
+<a class="sourceLine" id="cb2-9" title="9"><span class="kw">data</span> <span class="dt">Codelet</span> <span class="fu">=</span> <span class="dt">Codelet</span></a>
+<a class="sourceLine" id="cb2-10" title="10">    {<span class="ot"> prefix  ::</span> <span class="dt">Text</span></a>
+<a class="sourceLine" id="cb2-11" title="11">    ,<span class="ot"> radix   ::</span> <span class="dt">Int</span> }</a>
+<a class="sourceLine" id="cb2-12" title="12"></a>
+<a class="sourceLine" id="cb2-13" title="13"><span class="ot">codeletName ::</span> <span class="dt">Codelet</span> <span class="ot">-&gt;</span> <span class="dt">Text</span></a>
+<a class="sourceLine" id="cb2-14" title="14">codeletName c <span class="fu">=</span> prefix c <span class="fu">&lt;&gt;</span> <span class="st">&quot;_&quot;</span> <span class="fu">&lt;&gt;</span> tshow (radix c)</a></code></pre></div>
+<h2 id="abstract-syntax-tree">Abstract Syntax Tree</h2>
+<div class="sourceCode" id="cb3"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb3-1" title="1"><span class="ot">{-# LANGUAGE GADTs #-}</span></a>
+<a class="sourceLine" id="cb3-2" title="2"></a>
+<a class="sourceLine" id="cb3-3" title="3"><span class="kw">module</span> <span class="dt">AST</span> <span class="kw">where</span></a>
+<a class="sourceLine" id="cb3-4" title="4"></a>
+<a class="sourceLine" id="cb3-5" title="5"><span class="kw">import</span> <span class="dt">Data.Text</span> (<span class="dt">Text</span>)</a>
+<a class="sourceLine" id="cb3-6" title="6"><span class="kw">import</span> <span class="kw">qualified</span> <span class="dt">Data.Text</span> <span class="kw">as</span> <span class="dt">T</span></a>
+<a class="sourceLine" id="cb3-7" title="7"></a>
+<a class="sourceLine" id="cb3-8" title="8"><span class="kw">import</span> <span class="dt">Data.Complex</span></a>
+<a class="sourceLine" id="cb3-9" title="9"></a>
+<a class="sourceLine" id="cb3-10" title="10"><span class="kw">newtype</span> <span class="dt">Function</span> a b <span class="fu">=</span> <span class="dt">Function</span> <span class="dt">Text</span></a>
+<a class="sourceLine" id="cb3-11" title="11"><span class="kw">newtype</span> <span class="dt">Variable</span> a <span class="fu">=</span> <span class="dt">Variable</span> <span class="dt">Text</span></a>
+<a class="sourceLine" id="cb3-12" title="12"></a>
+<a class="sourceLine" id="cb3-13" title="13"><span class="kw">data</span> <span class="dt">Expr</span> a <span class="kw">where</span></a>
+<a class="sourceLine" id="cb3-14" title="14">    <span class="dt">IntegerValue</span><span class="ot"> ::</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">Expr</span> <span class="dt">Int</span></a>
+<a class="sourceLine" id="cb3-15" title="15">    <span class="dt">RealValue</span><span class="ot">    ::</span> <span class="dt">Double</span> <span class="ot">-&gt;</span> <span class="dt">Expr</span> <span class="dt">Double</span></a>
+<a class="sourceLine" id="cb3-16" title="16">    <span class="dt">ComplexValue</span><span class="ot"> ::</span> <span class="dt">Complex</span> <span class="dt">Double</span> <span class="ot">-&gt;</span> <span class="dt">Expr</span> (<span class="dt">Complex</span> <span class="dt">Double</span>)</a>
+<a class="sourceLine" id="cb3-17" title="17">    <span class="dt">Reference</span><span class="ot">    ::</span> <span class="dt">Variable</span> a <span class="ot">-&gt;</span> <span class="dt">Expr</span> a</a>
+<a class="sourceLine" id="cb3-18" title="18">    <span class="dt">FunctionCall</span><span class="ot"> ::</span> <span class="dt">Function</span> a b <span class="ot">-&gt;</span> <span class="dt">Expr</span> b <span class="ot">-&gt;</span> <span class="dt">Expr</span> a</a></code></pre></div>
+<h2 id="miscellaneous-functions">Miscellaneous functions</h2>
+<div class="sourceCode" id="cb4"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb4-1" title="1"><span class="kw">module</span> <span class="dt">Lib</span> <span class="kw">where</span></a>
+<a class="sourceLine" id="cb4-2" title="2"></a>
+<a class="sourceLine" id="cb4-3" title="3"><span class="kw">import</span> <span class="dt">Data.Text</span> (<span class="dt">Text</span>)</a>
+<a class="sourceLine" id="cb4-4" title="4"><span class="kw">import</span> <span class="kw">qualified</span> <span class="dt">Data.Text</span> <span class="kw">as</span> <span class="dt">T</span></a>
+<a class="sourceLine" id="cb4-5" title="5"></a>
+<a class="sourceLine" id="cb4-6" title="6"><span class="fu">&lt;&lt;</span>lib<span class="fu">-</span>list<span class="fu">-</span>manipulation<span class="fu">&gt;&gt;</span></a>
+<a class="sourceLine" id="cb4-7" title="7"></a>
+<a class="sourceLine" id="cb4-8" title="8"><span class="ot">tshow ::</span> <span class="dt">Show</span> a <span class="ot">=&gt;</span> a <span class="ot">-&gt;</span> <span class="dt">Text</span></a>
+<a class="sourceLine" id="cb4-9" title="9">tshow <span class="fu">=</span> T.pack <span class="fu">.</span> <span class="fu">show</span></a></code></pre></div>
+<h3 id="list-manipulation">List manipulation</h3>
+<p>We will be manipulating the shape and stride lists to slice the n-dimensional array. These operations just didn’t make it into Haskell’s standard library.</p>
+<p><em>«lib-list-manipulation»=</em></p>
+<div class="sourceCode" id="lib-list-manipulation"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="lib-list-manipulation-1" title="1"><span class="ot">remove ::</span> [a] <span class="ot">-&gt;</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> [a]</a>
+<a class="sourceLine" id="lib-list-manipulation-2" title="2">remove [] _ <span class="fu">=</span> []</a>
+<a class="sourceLine" id="lib-list-manipulation-3" title="3">remove (x<span class="fu">:</span>xs) n</a>
+<a class="sourceLine" id="lib-list-manipulation-4" title="4">    <span class="fu">|</span> n <span class="fu">==</span> <span class="dv">0</span> <span class="fu">=</span> xs</a>
+<a class="sourceLine" id="lib-list-manipulation-5" title="5">    <span class="fu">|</span> <span class="fu">otherwise</span> <span class="fu">=</span> x <span class="fu">:</span> remove xs (n <span class="fu">-</span> <span class="dv">1</span>)</a>
+<a class="sourceLine" id="lib-list-manipulation-6" title="6"></a>
+<a class="sourceLine" id="lib-list-manipulation-7" title="7"><span class="ot">replace ::</span> [a] <span class="ot">-&gt;</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> a <span class="ot">-&gt;</span> [a]</a>
+<a class="sourceLine" id="lib-list-manipulation-8" title="8">replace [] _  _ <span class="fu">=</span> []</a>
+<a class="sourceLine" id="lib-list-manipulation-9" title="9">replace (x<span class="fu">:</span>xs) n y</a>
+<a class="sourceLine" id="lib-list-manipulation-10" title="10">    <span class="fu">|</span> n <span class="fu">==</span> <span class="dv">0</span> <span class="fu">=</span> y<span class="fu">:</span>xs</a>
+<a class="sourceLine" id="lib-list-manipulation-11" title="11">    <span class="fu">|</span> <span class="fu">otherwise</span> <span class="fu">=</span> x <span class="fu">:</span> replace xs (n <span class="fu">-</span> <span class="dv">1</span>) y</a>
+<a class="sourceLine" id="lib-list-manipulation-12" title="12"></a>
+<a class="sourceLine" id="lib-list-manipulation-13" title="13"><span class="ot">insert ::</span> [a] <span class="ot">-&gt;</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> a <span class="ot">-&gt;</span> [a]</a>
+<a class="sourceLine" id="lib-list-manipulation-14" title="14">insert [] _  _ <span class="fu">=</span> []</a>
+<a class="sourceLine" id="lib-list-manipulation-15" title="15">insert (x<span class="fu">:</span>xs) n y</a>
+<a class="sourceLine" id="lib-list-manipulation-16" title="16">    <span class="fu">|</span> n <span class="fu">==</span> <span class="dv">0</span> <span class="fu">=</span> y<span class="fu">:</span>x<span class="fu">:</span>xs</a>
+<a class="sourceLine" id="lib-list-manipulation-17" title="17">    <span class="fu">|</span> <span class="fu">otherwise</span> <span class="fu">=</span> x <span class="fu">:</span> insert xs (n <span class="fu">-</span> <span class="dv">1</span>) y</a></code></pre></div>
+<h2 id="unit-tests">Unit tests</h2>
+<div class="sourceCode" id="cb5"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb5-1" title="1"><span class="ot">{-# LANGUAGE DuplicateRecordFields #-}</span></a>
+<a class="sourceLine" id="cb5-2" title="2"></a>
+<a class="sourceLine" id="cb5-3" title="3"><span class="kw">import</span> <span class="dt">Test.Hspec</span></a>
+<a class="sourceLine" id="cb5-4" title="4"></a>
+<a class="sourceLine" id="cb5-5" title="5"><span class="kw">import</span> <span class="dt">Array</span></a>
+<a class="sourceLine" id="cb5-6" title="6"><span class="kw">import</span> <span class="dt">Lib</span></a>
+<a class="sourceLine" id="cb5-7" title="7"></a>
+<a class="sourceLine" id="cb5-8" title="8"><span class="ot">main ::</span> <span class="dt">IO</span> ()</a>
+<a class="sourceLine" id="cb5-9" title="9">main <span class="fu">=</span> hspec <span class="fu">$</span> <span class="kw">do</span></a>
+<a class="sourceLine" id="cb5-10" title="10">    describe <span class="st">&quot;Strides.fromShape&quot;</span> <span class="fu">$</span> <span class="kw">do</span></a>
+<a class="sourceLine" id="cb5-11" title="11">        it <span class="st">&quot;computes strides from shapes&quot;</span> <span class="fu">$</span> <span class="kw">do</span></a>
+<a class="sourceLine" id="cb5-12" title="12">            fromShape [<span class="dv">3</span>, <span class="dv">3</span>, <span class="dv">3</span>] <span class="dv">1</span> <span class="ot">`shouldBe`</span> [<span class="dv">1</span>, <span class="dv">3</span>, <span class="dv">9</span>]</a>
+<a class="sourceLine" id="cb5-13" title="13">            fromShape [<span class="dv">2</span>, <span class="dv">3</span>, <span class="dv">5</span>] <span class="dv">1</span> <span class="ot">`shouldBe`</span> [<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">6</span>]</a>
+<a class="sourceLine" id="cb5-14" title="14"></a>
+<a class="sourceLine" id="cb5-15" title="15">    describe <span class="st">&quot;Strides.remove&quot;</span> <span class="fu">$</span> <span class="kw">do</span></a>
+<a class="sourceLine" id="cb5-16" title="16">        it <span class="st">&quot;drops indexed entry from list&quot;</span> <span class="fu">$</span> <span class="kw">do</span></a>
+<a class="sourceLine" id="cb5-17" title="17">            remove [<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>, <span class="dv">4</span>] <span class="dv">0</span> <span class="ot">`shouldBe`</span> [<span class="dv">2</span>, <span class="dv">3</span>, <span class="dv">4</span>]</a>
+<a class="sourceLine" id="cb5-18" title="18">            remove [<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>, <span class="dv">4</span>] <span class="dv">2</span> <span class="ot">`shouldBe`</span> [<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">4</span>]</a>
+<a class="sourceLine" id="cb5-19" title="19"></a>
+<a class="sourceLine" id="cb5-20" title="20">    describe <span class="st">&quot;Strides.replace&quot;</span> <span class="fu">$</span> <span class="kw">do</span></a>
+<a class="sourceLine" id="cb5-21" title="21">        it <span class="st">&quot;replaces entry at index&quot;</span> <span class="fu">$</span> <span class="kw">do</span></a>
+<a class="sourceLine" id="cb5-22" title="22">            replace [<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>, <span class="dv">4</span>] <span class="dv">0</span> <span class="dv">7</span> <span class="ot">`shouldBe`</span> [<span class="dv">7</span>, <span class="dv">2</span>, <span class="dv">3</span>, <span class="dv">4</span>]</a>
+<a class="sourceLine" id="cb5-23" title="23">            replace [<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>, <span class="dv">4</span>] <span class="dv">2</span> <span class="dv">7</span> <span class="ot">`shouldBe`</span> [<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">7</span>, <span class="dv">4</span>]</a>
+<a class="sourceLine" id="cb5-24" title="24"></a>
+<a class="sourceLine" id="cb5-25" title="25">    describe <span class="st">&quot;Strides.insert&quot;</span> <span class="fu">$</span> <span class="kw">do</span></a>
+<a class="sourceLine" id="cb5-26" title="26">        it <span class="st">&quot;inserts entry at index&quot;</span> <span class="fu">$</span> <span class="kw">do</span></a>
+<a class="sourceLine" id="cb5-27" title="27">            insert [<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>, <span class="dv">4</span>] <span class="dv">0</span> <span class="dv">7</span> <span class="ot">`shouldBe`</span> [<span class="dv">7</span>, <span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>, <span class="dv">4</span>]</a>
+<a class="sourceLine" id="cb5-28" title="28">            insert [<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>, <span class="dv">4</span>] <span class="dv">2</span> <span class="dv">7</span> <span class="ot">`shouldBe`</span> [<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">7</span>, <span class="dv">3</span>, <span class="dv">4</span>]</a>
+<a class="sourceLine" id="cb5-29" title="29"></a>
+<a class="sourceLine" id="cb5-30" title="30">    <span class="kw">let</span> a1 <span class="fu">=</span> floatArray <span class="st">&quot;test&quot;</span> [<span class="dv">4</span>, <span class="dv">5</span>]</a>
+<a class="sourceLine" id="cb5-31" title="31">    describe <span class="st">&quot;Strides.select&quot;</span> <span class="fu">$</span> <span class="kw">do</span></a>
+<a class="sourceLine" id="cb5-32" title="32">        it <span class="st">&quot;selects sub-array&quot;</span> <span class="fu">$</span> <span class="kw">do</span></a>
+<a class="sourceLine" id="cb5-33" title="33">            <span class="kw">let</span> a103 <span class="fu">=</span> select a1 <span class="dv">0</span> <span class="dv">3</span></a>
+<a class="sourceLine" id="cb5-34" title="34">            <span class="kw">let</span> a112 <span class="fu">=</span> select a1 <span class="dv">1</span> <span class="dv">2</span></a>
+<a class="sourceLine" id="cb5-35" title="35">            (shape <span class="fu">&lt;$&gt;</span> a103) <span class="ot">`shouldBe`</span> <span class="dt">Right</span> [<span class="dv">5</span>]</a>
+<a class="sourceLine" id="cb5-36" title="36">            (stride <span class="fu">&lt;$&gt;</span> a103) <span class="ot">`shouldBe`</span> <span class="dt">Right</span> [<span class="dv">4</span>]</a>
+<a class="sourceLine" id="cb5-37" title="37">            (offset <span class="fu">&lt;$&gt;</span> a103) <span class="ot">`shouldBe`</span> <span class="dt">Right</span> <span class="dv">3</span></a>
+<a class="sourceLine" id="cb5-38" title="38">            (shape <span class="fu">&lt;$&gt;</span> a112) <span class="ot">`shouldBe`</span> <span class="dt">Right</span> [<span class="dv">4</span>]</a>
+<a class="sourceLine" id="cb5-39" title="39">            (stride <span class="fu">&lt;$&gt;</span> a112) <span class="ot">`shouldBe`</span> <span class="dt">Right</span> [<span class="dv">1</span>]</a>
+<a class="sourceLine" id="cb5-40" title="40">            (offset <span class="fu">&lt;$&gt;</span> a112) <span class="ot">`shouldBe`</span> <span class="dt">Right</span> <span class="dv">8</span></a></code></pre></div>
+</body>
+</html>

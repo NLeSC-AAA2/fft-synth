@@ -1,0 +1,57 @@
+name:                fft-synth
+version:             0.1.0.0
+github:              "NLeSC-AAA3/fft-synth"
+license:             GPL3
+author:              "Johan Hidding"
+maintainer:          "j.hidding@esciencecenter.nl"
+copyright:           "2019 Netherlands eScience Center"
+
+extra-source-files:
+- README.md
+- ChangeLog.md
+
+# Metadata used when publishing your package
+# synopsis:            Short description of your package
+# category:            Web
+
+# To avoid duplicated efforts in documentation and dealing with the
+# complications of embedding Haddock markup inside cabal files, it is
+# common to point users to the README.md file.
+description:         Please see the README on GitHub at <https://github.com/githubuser/fft-synth#readme>
+
+dependencies:
+- base >= 4.7 && < 5
+- mtl
+- text
+
+default-extensions:
+- OverloadedStrings
+- FlexibleContexts
+- ScopedTypeVariables
+- NamedFieldPuns
+
+library:
+  source-dirs: src
+
+executables:
+  fft-synth-exe:
+    main:                Main.hs
+    source-dirs:         app
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - fft-synth
+
+tests:
+  fft-synth-test:
+    main:                Spec.hs
+    source-dirs:         test
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - fft-synth
+    - hspec
