@@ -1,3 +1,4 @@
 .stack-work/
 fft-synth.cabal
 *~
+*.swp

@@ -23,10 +23,12 @@ dependencies:
 - base >= 4.7 && < 5
 - mtl
 - text
+- vector
 
 default-extensions:
 - OverloadedStrings
 - FlexibleContexts
+- FlexibleInstances
 - ScopedTypeVariables
 - NamedFieldPuns
 

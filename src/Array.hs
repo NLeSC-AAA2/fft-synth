@@ -50,9 +50,6 @@ fromShape [] _ = []
 fromShape (x:xs) n = n : fromShape xs (n * x)
 -- ------ end
 -- ------ begin <<array-methods>>[1]
-product :: Shape -> Int
-product xs = foldr (*) 1 xs
-
 ndim :: Array a -> Int
 ndim = length . shape
 

@@ -21,7 +21,7 @@ import Control.Monad.Except
 
 import Lib
 
-<<array-list-manipulation>>
+
 <<array-numeric-class>>
 <<array-types>>
 <<array-methods>>
@@ -86,9 +86,6 @@ fromShape (x:xs) n = n : fromShape xs (n * x)
 Basic properties of an array: size, dimension and if the array is contiguous.
 
 ``` {.haskell #array-methods}
-product :: Shape -> Int
-product xs = foldr (*) 1 xs
-
 ndim :: Array a -> Int
 ndim = length . shape
 
@@ -202,6 +199,98 @@ codeletName :: Codelet -> Text
 codeletName c = prefix c <> "_" <> tshow (radix c)
 ```
 
+# Twiddle factors
+
+In Python we created an array of twiddle factors:
+
+``` {.python}
+def w(k, n):
+    return np.exp(2j * np.pi * k / n)
+
+def make_twiddle(n1, n2):
+    I1 = np.arange(n1)
+    I2 = np.arange(n2)
+    return w(I1[:,None] * I2[None,:], n1*n2).astype('complex64')
+```
+
+In Haskell this is a bit different:
+
+``` {.haskell file=src/TwiddleFactors.hs}
+module TwiddleFactors where
+
+import Data.Complex
+
+import Data.Vector.Unboxed (Vector)
+import qualified Data.Vector.Unboxed as V
+
+import Array
+
+<<twiddle-factors-w>>
+<<twiddle-factors-multi-w>>
+<<twiddle-factors-make>>
+```
+
+We still have the equation
+
+$$w_n^k = \exp \left[2 \pi i \frac{k}{n}\right].$$
+
+Haskell provides the function `cis` which computes a complex point on the unit circle given the phase.
+
+``` {.haskell #twiddle-factors-w}
+w :: RealFloat a => Int -> Int -> Complex a
+w n k = cis (2 * pi * fromIntegral k / fromIntegral n)
+```
+
+We need to map the index vector to a value $w_{\prod n_i}^{\prod k_i}$.
+
+``` {.haskell #twiddle-factors-multi-w}
+multiW :: RealFloat a => Shape -> [Int] -> Complex a
+multiW n k = w (product n) (product k)
+```
+
+To generate the list of indices (lists are lazy, so this should be efficient enough), we have a nifty one-liner. Given a list of indices for a reduced shape vector we can create the full list by prepending numbers from the range `[0 .. n-1]`.
+
+``` {.haskell #twiddle-factors-make}
+indices :: Shape -> [[Int]]
+indices = foldr (\ n -> concatMap (\ idcs -> map (: idcs) [0 .. n-1])) [[]]
+
+makeTwiddle :: Shape -> Vector (Complex Double)
+makeTwiddle shape = V.fromList $ map (multiW shape) $ indices shape
+```
+
+## Unit tests
+
+``` {.haskell #test-predicates}
+class Approx a where
+    closeTo :: a -> a -> Bool
+
+instance Approx Float where
+    closeTo a b = abs (a - b) < 1e-5
+
+instance Approx Double where
+    closeTo a b = abs (a - b) < 1e-10
+
+instance (Approx a, Applicative m, Foldable m) => Approx (m a) where
+    closeTo x y = and $ liftA2 closeTo x y
+
+instance {-# OVERLAPPING #-} (Approx a, V.Unbox a) => Approx (Vector a) where
+    closeTo x y = V.and $ V.zipWith closeTo x y
+```
+
+```{.haskell #test-twiddle-factors}
+describe "TwiddleFactors.indices" $ do
+    it "creates an index list" $ do
+        indices [2, 2] `shouldBe` [[0, 0], [1, 0], [0, 1], [1, 1]]
+        indices [3, 1] `shouldBe` [[0, 0], [1, 0], [2, 0]]
+
+describe "TwiddleFactors.makeTwiddle" $ do
+    it "Generates twiddle factors" $ do
+        makeTwiddle [2, 2] `shouldSatisfy` closeTo
+            (V.fromList [ 1.0, 1.0, 1.0, 0.0 :+ 1.0 ])
+        makeTwiddle [4] `shouldSatisfy` closeTo
+            (V.fromList [ 1.0, 0.0 :+ 1.0, -1.0, 0.0 :+ (-1.0) ])
+```
+
 # Abstract Syntax Tree
 
 ``` {.haskell file=src/AST.hs}
@@ -213,16 +302,32 @@ import Data.Text (Text)
 import qualified Data.Text as T
 
 import Data.Complex
+import Array
 
 newtype Function a b = Function Text
 newtype Variable a = Variable Text
+newtype Constant a = Constant Text
+
+data Range = Range
+    { start :: Int
+    , end   :: Int
+    , step  :: Int } deriving (Show)
 
 data Expr a where
-    IntegerValue :: Int -> Expr Int
-    RealValue    :: Double -> Expr Double
-    ComplexValue :: Complex Double -> Expr (Complex Double)
-    Reference    :: Variable a -> Expr a
-    FunctionCall :: Function a b -> Expr b -> Expr a
+    IntegerValue   :: Int -> Expr Int
+    RealValue      :: Double -> Expr Double
+    ComplexValue   :: Complex Double -> Expr (Complex Double)
+    VarReference   :: Variable a -> Expr a
+    ConstReference :: Constant a -> Expr a
+    ArrayIndex     :: Array a -> [Expr Int] -> Expr a
+    FunctionCall   :: Function a b -> Expr b -> Expr a
+
+data Stmt where
+    VarDeclaration   :: Variable a -> Stmt
+    ConstDeclaration :: Constant a -> Stmt
+    Expression       :: Expr () -> Stmt
+    ParallelFor      :: Variable Int -> Range -> [Stmt] -> Stmt
+    Assignment       :: Variable a -> Expr a -> Stmt
 ```
 
 # Miscellaneous functions
@@ -269,9 +374,21 @@ insert (x:xs) n y
 {-# LANGUAGE DuplicateRecordFields #-}
 
 import Test.Hspec
+import Data.Complex
+import Control.Applicative (liftA2)
+
+import Data.Vector.Unboxed (Vector)
+import qualified Data.Vector.Unboxed as V
 
 import Array
 import Lib
+import TwiddleFactors
+
+<<test-predicates>>
+
+testTwiddleFactors :: Spec
+testTwiddleFactors = do
+    <<test-twiddle-factors>>
 
 main :: IO ()
 main = hspec $ do
@@ -306,5 +423,7 @@ main = hspec $ do
             (shape <$> a112) `shouldBe` Right [4]
             (stride <$> a112) `shouldBe` Right [1]
             (offset <$> a112) `shouldBe` Right 8
+
+    testTwiddleFactors
 ```
 

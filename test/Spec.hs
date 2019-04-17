@@ -2,9 +2,48 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 
 import Test.Hspec
+import Data.Complex
+import Control.Applicative (liftA2)
+
+import Data.Vector.Unboxed (Vector)
+import qualified Data.Vector.Unboxed as V
 
 import Array
 import Lib
+import TwiddleFactors
+
+-- ------ begin <<test-predicates>>[0]
+class Approx a where
+    closeTo :: a -> a -> Bool
+
+instance Approx Float where
+    closeTo a b = abs (a - b) < 1e-5
+
+instance Approx Double where
+    closeTo a b = abs (a - b) < 1e-10
+
+instance (Approx a, Applicative m, Foldable m) => Approx (m a) where
+    closeTo x y = and $ liftA2 closeTo x y
+
+instance {-# OVERLAPPING #-} (Approx a, V.Unbox a) => Approx (Vector a) where
+    closeTo x y = V.and $ V.zipWith closeTo x y
+-- ------ end
+
+testTwiddleFactors :: Spec
+testTwiddleFactors = do
+    -- ------ begin <<test-twiddle-factors>>[0]
+    describe "TwiddleFactors.indices" $ do
+        it "creates an index list" $ do
+            indices [2, 2] `shouldBe` [[0, 0], [1, 0], [0, 1], [1, 1]]
+            indices [3, 1] `shouldBe` [[0, 0], [1, 0], [2, 0]]
+    
+    describe "TwiddleFactors.makeTwiddle" $ do
+        it "Generates twiddle factors" $ do
+            makeTwiddle [2, 2] `shouldSatisfy` closeTo
+                (V.fromList [ 1.0, 1.0, 1.0, 0.0 :+ 1.0 ])
+            makeTwiddle [4] `shouldSatisfy` closeTo
+                (V.fromList [ 1.0, 0.0 :+ 1.0, -1.0, 0.0 :+ (-1.0) ])
+    -- ------ end
 
 main :: IO ()
 main = hspec $ do
@@ -39,4 +78,6 @@ main = hspec $ do
             (shape <$> a112) `shouldBe` Right [4]
             (stride <$> a112) `shouldBe` Right [1]
             (offset <$> a112) `shouldBe` Right 8
+
+    testTwiddleFactors
 -- ------ end
