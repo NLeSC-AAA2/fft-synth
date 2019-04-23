@@ -32,12 +32,12 @@ instance {-# OVERLAPPING #-} (Approx a, V.Unbox a) => Approx (Vector a) where
 testTwiddleFactors :: Spec
 testTwiddleFactors = do
     -- ------ begin <<test-twiddle-factors>>[0]
-    describe "TwiddleFactors.indices" $ do
+    describe "TwiddleFactors.indices" $
         it "creates an index list" $ do
             indices [2, 2] `shouldBe` [[0, 0], [1, 0], [0, 1], [1, 1]]
             indices [3, 1] `shouldBe` [[0, 0], [1, 0], [2, 0]]
     
-    describe "TwiddleFactors.makeTwiddle" $ do
+    describe "TwiddleFactors.makeTwiddle" $
         it "Generates twiddle factors" $ do
             makeTwiddle [2, 2] `shouldSatisfy` closeTo
                 (V.fromList [ 1.0, 1.0, 1.0, 0.0 :+ 1.0 ])
@@ -47,28 +47,28 @@ testTwiddleFactors = do
 
 main :: IO ()
 main = hspec $ do
-    describe "Strides.fromShape" $ do
+    describe "Strides.fromShape" $
         it "computes strides from shapes" $ do
             fromShape [3, 3, 3] 1 `shouldBe` [1, 3, 9]
             fromShape [2, 3, 5] 1 `shouldBe` [1, 2, 6]
 
-    describe "Strides.remove" $ do
+    describe "Strides.remove" $
         it "drops indexed entry from list" $ do
-            remove [1, 2, 3, 4] 0 `shouldBe` [2, 3, 4]
-            remove [1, 2, 3, 4] 2 `shouldBe` [1, 2, 4]
+            remove [1, 2, 3, 4 :: Int] 0 `shouldBe` [2, 3, 4]
+            remove [1, 2, 3, 4 :: Int] 2 `shouldBe` [1, 2, 4]
 
-    describe "Strides.replace" $ do
+    describe "Strides.replace" $
         it "replaces entry at index" $ do
-            replace [1, 2, 3, 4] 0 7 `shouldBe` [7, 2, 3, 4]
-            replace [1, 2, 3, 4] 2 7 `shouldBe` [1, 2, 7, 4]
+            replace [1, 2, 3, 4 :: Int] 0 7 `shouldBe` [7, 2, 3, 4]
+            replace [1, 2, 3, 4 :: Int] 2 7 `shouldBe` [1, 2, 7, 4]
 
-    describe "Strides.insert" $ do
+    describe "Strides.insert" $
         it "inserts entry at index" $ do
-            insert [1, 2, 3, 4] 0 7 `shouldBe` [7, 1, 2, 3, 4]
-            insert [1, 2, 3, 4] 2 7 `shouldBe` [1, 2, 7, 3, 4]
+            insert [1, 2, 3, 4 :: Int] 0 7 `shouldBe` [7, 1, 2, 3, 4]
+            insert [1, 2, 3, 4 :: Int] 2 7 `shouldBe` [1, 2, 7, 3, 4]
 
     let a1 = floatArray "test" [4, 5]
-    describe "Strides.select" $ do
+    describe "Strides.select" $
         it "selects sub-array" $ do
             let a103 = select a1 0 3
             let a112 = select a1 1 2

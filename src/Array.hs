@@ -37,9 +37,9 @@ data Array a = Array
     , stride   :: Stride
     , offset   :: Int } deriving (Show)
 
-data ArrayIndex a = ArrayIndex
-    { name     :: Text
-    , index    :: Int } deriving (Show)
+-- data ArrayIndex a = ArrayIndex
+--    { name     :: Text
+--     , index    :: Int } deriving (Show)
 
 floatArray :: Text -> Shape -> Array Float
 floatArray name shape = Array name shape (fromShape shape 1) 0

@@ -24,6 +24,8 @@ dependencies:
 - mtl
 - text
 - vector
+- process
+- containers
 
 default-extensions:
 - OverloadedStrings

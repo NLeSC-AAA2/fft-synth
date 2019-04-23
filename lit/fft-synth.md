@@ -59,9 +59,9 @@ data Array a = Array
     , stride   :: Stride
     , offset   :: Int } deriving (Show)
 
-data ArrayIndex a = ArrayIndex
-    { name     :: Text
-    , index    :: Int } deriving (Show)
+-- data ArrayIndex a = ArrayIndex
+--    { name     :: Text
+--     , index    :: Int } deriving (Show)
 
 floatArray :: Text -> Shape -> Array Float
 floatArray name shape = Array name shape (fromShape shape 1) 0
@@ -278,12 +278,12 @@ instance {-# OVERLAPPING #-} (Approx a, V.Unbox a) => Approx (Vector a) where
 ```
 
 ```{.haskell #test-twiddle-factors}
-describe "TwiddleFactors.indices" $ do
+describe "TwiddleFactors.indices" $
     it "creates an index list" $ do
         indices [2, 2] `shouldBe` [[0, 0], [1, 0], [0, 1], [1, 1]]
         indices [3, 1] `shouldBe` [[0, 0], [1, 0], [2, 0]]
 
-describe "TwiddleFactors.makeTwiddle" $ do
+describe "TwiddleFactors.makeTwiddle" $
     it "Generates twiddle factors" $ do
         makeTwiddle [2, 2] `shouldSatisfy` closeTo
             (V.fromList [ 1.0, 1.0, 1.0, 0.0 :+ 1.0 ])
@@ -295,18 +295,34 @@ describe "TwiddleFactors.makeTwiddle" $ do
 
 ``` {.haskell file=src/AST.hs}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE FlexibleInstances,UndecidableInstances #-}
 
 module AST where
 
+import Data.Proxy
 import Data.Text (Text)
 import qualified Data.Text as T
 
-import Data.Complex
+-- import Data.Complex
 import Array
+import Lib
 
-newtype Function a b = Function Text
-newtype Variable a = Variable Text
-newtype Constant a = Constant Text
+class (Show a) => Declarable a where
+  typename :: proxy a -> Text
+
+data Pointer a = Pointer deriving (Show)
+newtype Function a b = Function Text deriving (Show)
+newtype Variable a = Variable Text deriving (Show)
+newtype Constant a = Constant Text deriving (Show)
+
+instance Declarable Int where
+  typename _ = "int"
+instance Declarable Double where
+  typename _ = "R"
+instance Declarable a => Declarable (Pointer a) where
+  typename _ = typename (Proxy :: Proxy a) <> "*"
 
 data Range = Range
     { start :: Int
@@ -314,23 +330,153 @@ data Range = Range
     , step  :: Int } deriving (Show)
 
 data Expr a where
+    Literal        :: (Show a) => a -> Expr a
     IntegerValue   :: Int -> Expr Int
     RealValue      :: Double -> Expr Double
-    ComplexValue   :: Complex Double -> Expr (Complex Double)
+    -- ComplexValue   :: Complex Double -> Expr (Complex Double)
+    ArrayRef       :: Array a -> Expr (Pointer a)
     VarReference   :: Variable a -> Expr a
     ConstReference :: Constant a -> Expr a
     ArrayIndex     :: Array a -> [Expr Int] -> Expr a
-    FunctionCall   :: Function a b -> Expr b -> Expr a
+    TNull          :: Expr ()
+    TCons          :: (Show a, Show b) => Expr a -> Expr b -> Expr (a, b)
+    FunctionCall   :: (Show b) => Function a b -> Expr b -> Expr a
+
+deriving instance Show a => Show (Expr a)
 
 data Stmt where
-    VarDeclaration   :: Variable a -> Stmt
-    ConstDeclaration :: Constant a -> Stmt
+    VarDeclaration   :: (Declarable a, Show a) => Variable a -> Stmt
+    ConstDeclaration :: (Declarable a, Show a) => Constant a -> Stmt
     Expression       :: Expr () -> Stmt
     ParallelFor      :: Variable Int -> Range -> [Stmt] -> Stmt
-    Assignment       :: Variable a -> Expr a -> Stmt
+    Assignment       :: (Show a) => Variable a -> Expr a -> Stmt
+
+deriving instance Show Stmt
+
+data FunctionDecl a b = FunctionDecl
+  { functionName :: Text
+  , argNames     :: [Text]
+  , functionBody :: [Stmt] }
+
+class Syntax a where
+  generate :: a -> Text
+
+instance Syntax (Expr a) where
+  generate (Literal x) = tshow x
+  generate (IntegerValue x) = tshow x
+  generate (RealValue x) = tshow x
+  generate (ArrayRef x) = name x <> " + " <> tshow (offset x)
+  generate (VarReference (Variable x)) = x
+  generate (ConstReference (Constant x)) = x
+  generate (ArrayIndex a i) = name a <> "[<index expression>]"
+  generate (FunctionCall (Function f) a) = ""
+  generate (TCons a TNull) = generate a
+  generate (TCons a b) = generate a <> ", " <> generate b
+  generate TNull = ""
+
+instance Syntax Stmt where
+  generate (VarDeclaration v@(Variable x)) = typename v <> " " <> x <> ";"
+  generate (ConstDeclaration v@(Constant x)) = typename v <> " const " <> x <> ";"
+  generate (Expression e) = generate e <> ";"
+  generate (ParallelFor (Variable v) (Range a b s) body) =
+    "for (int " <> v <> "=" <> tshow a <> ";" <> v <> "<"
+    <> tshow b <> ";" <> v <> "+=" <> tshow s <> ") {\n"
+    <> T.unlines (map generate body) <> "\n}"
+  generate (Assignment (Variable v) e) = v <> " = " <> generate e <> ";"
 ```
 
-# Miscellaneous functions
+# Calling GenFFT
+
+```{.haskell file=src/GenFFT.hs}
+{-# LANGUAGE RecordWildCards #-}
+
+module GenFFT where
+
+import Data.Text (Text)
+import qualified Data.Text as T
+import System.Process
+import Data.Maybe
+
+import Lib (tshow)
+
+class ValidArg a where
+  toText :: a -> Text
+
+instance ValidArg String where
+  toText = T.pack
+
+instance ValidArg Text where
+  toText = id
+
+instance ValidArg Int where
+  toText = tshow
+
+instance ValidArg Double where
+  toText = tshow
+
+macros :: [(Text, Text)]
+macros =
+  [ ("R","float")
+  , ("E","R")
+  , ("stride","int")
+  , ("INT","int")
+  , ("K(x)","((E) x)")
+  , ("DK(name,value)","const E name = K(value)")
+  , ("WS(s,i)","s*i")
+  , ("MAKE_VOLATILE_STRIDE(x,y)","0")
+  , ("FMA(a,b,c)","a * b + c")
+  , ("FMS(a,b,c)","a * b - c")
+  , ("FNMA(a,b,c)","-a * b - c")
+  , ("FNMS(a,b,c)","-a * b + c") ]
+
+genMacros :: Text
+genMacros = T.unlines $ map (\(k, v) -> "#define " <> k <> " " <> v) macros
+
+genFFT :: Text -> [Text] -> IO Text
+genFFT kind args = do
+  let progName = T.unpack $ "./genfft/gen_" <> kind <> ".native"
+      -- spec = RawCommand progName (map T.unpack args)
+  code <- T.pack <$> readProcess progName (map T.unpack args) ""
+  indent code
+
+indent :: Text -> IO Text
+indent x = T.pack <$> readProcess "indent" ["-nut"] (T.unpack x)
+
+data GenFFTArgs = GenFFTArgs
+  { compact     :: Bool
+  , standalone  :: Bool
+  , opencl      :: Bool
+  , name        :: Maybe Text } deriving (Show)
+
+defaultArgs :: GenFFTArgs
+defaultArgs = GenFFTArgs
+  { compact = True
+  , standalone = True
+  , opencl = True
+  , name = Nothing }
+
+optionalArg :: (ValidArg a) => Text -> Maybe a -> [Text]
+optionalArg opt val = fromMaybe [] (do {n <- val; return [opt, toText n]})
+
+argList :: GenFFTArgs -> [Text]
+argList GenFFTArgs{..} =
+  optionalArg "-name" name
+  <> ["-compact" | compact]
+  <> ["-standalone" | standalone]
+  <> ["-opencl" | opencl]
+
+genNoTwiddle :: Int -> GenFFTArgs -> IO Text
+genNoTwiddle radix args = do
+  let name' = fromMaybe ("notw_" <> tshow radix) (name args)
+  genFFT "notw" $ ["-n", tshow radix] <> argList args{name=Just name'}
+
+genTwiddle :: Int -> GenFFTArgs -> IO Text
+genTwiddle radix args = do
+  let name' = fromMaybe ("twiddle_" <> tshow radix) (name args)
+  genFFT "twiddle" $ ["-n", tshow radix] <> argList args{name=Just name'}
+```
+
+# Appendix: Miscellaneous functions
 
 ``` {.haskell file=src/Lib.hs}
 module Lib where
@@ -392,28 +538,28 @@ testTwiddleFactors = do
 
 main :: IO ()
 main = hspec $ do
-    describe "Strides.fromShape" $ do
+    describe "Strides.fromShape" $
         it "computes strides from shapes" $ do
             fromShape [3, 3, 3] 1 `shouldBe` [1, 3, 9]
             fromShape [2, 3, 5] 1 `shouldBe` [1, 2, 6]
 
-    describe "Strides.remove" $ do
+    describe "Strides.remove" $
         it "drops indexed entry from list" $ do
-            remove [1, 2, 3, 4] 0 `shouldBe` [2, 3, 4]
-            remove [1, 2, 3, 4] 2 `shouldBe` [1, 2, 4]
+            remove [1, 2, 3, 4 :: Int] 0 `shouldBe` [2, 3, 4]
+            remove [1, 2, 3, 4 :: Int] 2 `shouldBe` [1, 2, 4]
 
-    describe "Strides.replace" $ do
+    describe "Strides.replace" $
         it "replaces entry at index" $ do
-            replace [1, 2, 3, 4] 0 7 `shouldBe` [7, 2, 3, 4]
-            replace [1, 2, 3, 4] 2 7 `shouldBe` [1, 2, 7, 4]
+            replace [1, 2, 3, 4 :: Int] 0 7 `shouldBe` [7, 2, 3, 4]
+            replace [1, 2, 3, 4 :: Int] 2 7 `shouldBe` [1, 2, 7, 4]
 
-    describe "Strides.insert" $ do
+    describe "Strides.insert" $
         it "inserts entry at index" $ do
-            insert [1, 2, 3, 4] 0 7 `shouldBe` [7, 1, 2, 3, 4]
-            insert [1, 2, 3, 4] 2 7 `shouldBe` [1, 2, 7, 3, 4]
+            insert [1, 2, 3, 4 :: Int] 0 7 `shouldBe` [7, 1, 2, 3, 4]
+            insert [1, 2, 3, 4 :: Int] 2 7 `shouldBe` [1, 2, 7, 3, 4]
 
     let a1 = floatArray "test" [4, 5]
-    describe "Strides.select" $ do
+    describe "Strides.select" $
         it "selects sub-array" $ do
             let a103 = select a1 0 3
             let a112 = select a1 1 2
