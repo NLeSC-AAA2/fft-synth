@@ -39,13 +39,13 @@ data Expr a where
     IntegerValue   :: Int -> Expr Int
     RealValue      :: Double -> Expr Double
     -- ComplexValue   :: Complex Double -> Expr (Complex Double)
-    ArrayRef       :: Array a -> Expr (Pointer a)
+    ArrayRef       :: Array a -> Expr (Array a)
     VarReference   :: Variable a -> Expr a
     ConstReference :: Constant a -> Expr a
     ArrayIndex     :: Array a -> [Expr Int] -> Expr a
     TNull          :: Expr ()
-    TCons          :: (Show a, Show b) => Expr a -> Expr b -> Expr (a, b)
-    FunctionCall   :: (Show b) => Function a b -> Expr b -> Expr a
+    (:+:)          :: (Show a, Show b) => Expr a -> Expr b -> Expr (a, b)
+    Apply          :: (Show b) => Function a b -> Expr b -> Expr a
 
 deriving instance Show a => Show (Expr a)
 
@@ -74,9 +74,9 @@ instance Syntax (Expr a) where
   generate (VarReference (Variable x)) = x
   generate (ConstReference (Constant x)) = x
   generate (ArrayIndex a i) = name a <> "[<index expression>]"
-  generate (FunctionCall (Function f) a) = ""
-  generate (TCons a TNull) = generate a
-  generate (TCons a b) = generate a <> ", " <> generate b
+  generate (Apply (Function f) a) = f <> "(" <> generate a <> ")"
+  generate (a :+: TNull) = generate a
+  generate (a :+: b) = generate a <> ", " <> generate b
   generate TNull = ""
 
 instance Syntax Stmt where

@@ -17,11 +17,13 @@ The part where we synthesise larger FFTs from the FFTW codelets is written in Ha
 
 ```
 project root
-|--+ lit          (* literate code sources *)
-|--+ genfft       (* "classic" FFTW3 genfft *)
-|--+ src          (* library source files *)
 |--+ app          (* application source files *)
-|- Makefile
+|--+ docs         (* generated HTML documentation *)
+|--+ genfft       (* "classic" FFTW3 genfft *)
+|--+ lit          (* literate code sources *)
+|--+ scripts      (* shell scripts for weaving *)
+|--+ src          (* library source files *)
+|--+ test         (* unit tests *)
 |- README.md
 |- LICENSE        (* GPL3 *)
 ```
