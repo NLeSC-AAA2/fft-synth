@@ -80,16 +80,16 @@ transpose array@Array{shape, stride} = array
     , stride = reverse stride }
 -- ------ end
 -- ------ begin <<array-methods>>[5]
-reshape :: Array a -> Shape -> Either Text (Array a)
-reshape array@Array{shape,stride} newShape
+reshape :: MonadError Text m => Shape -> Array a -> m (Array a)
+reshape newShape array
     | contiguous array = return $ array
         { shape = newShape
         , stride = fromShape newShape 1 }
     | otherwise = throwError "Cannot reshape non-contiguous array."
 -- ------ end
 -- ------ begin <<array-methods>>[6]
-select :: Array a -> Int -> Int -> Either Text (Array a)
-select array@Array{shape,stride,offset} dim i = do
+select :: MonadError Text m => Int -> Int -> Array a -> m (Array a)
+select dim i array@Array{shape,stride,offset} = do
     rcheck "dim" (ndim array) dim
     rcheck "size" (shape !! dim) i
     return $ array
@@ -97,15 +97,15 @@ select array@Array{shape,stride,offset} dim i = do
         , stride = remove stride dim
         , offset = offset + (stride !! dim) * i }
 
-extrude :: Array a -> Int -> Either Text (Array a)
-extrude array@Array{shape,stride} dim = do
+extrude :: MonadError Text m => Int -> Array a -> m (Array a)
+extrude dim array@Array{shape,stride} = do
     rcheck "dim" (ndim array + 1) dim
     return $ array
         { shape  = insert shape dim 1
         , stride = insert stride dim ((stride !! dim) * (shape !! dim)) }
 
-slice :: Array a -> Int -> Int -> Int -> Int -> Either Text (Array a)
-slice array@Array{shape,stride,offset} dim a b step = do
+slice :: MonadError Text m => Int -> Int -> Int -> Int -> Array a -> m (Array a)
+slice dim a b step array@Array{shape,stride,offset} = do
     rcheck "dim" (ndim array) dim
     rcheck "a" ((shape !! dim) + 1) a
     rcheck "b" ((shape !! dim) + 1) b

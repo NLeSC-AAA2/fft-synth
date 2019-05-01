@@ -26,6 +26,7 @@ dependencies:
 - vector
 - process
 - containers
+- arithmoi
 
 default-extensions:
 - OverloadedStrings

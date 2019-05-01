@@ -1,5 +1,5 @@
 -- ------ language="Haskell" file="src/AST.hs"
-{-# LANGUAGE GADTs #-}
+{-# LANGUAGE GADTs,DataKinds,TypeOperators,KindSignatures #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE FlexibleInstances,UndecidableInstances #-}
@@ -18,7 +18,9 @@ class (Show a) => Declarable a where
   typename :: proxy a -> Text
 
 data Pointer a = Pointer deriving (Show)
-newtype Function a b = Function Text deriving (Show)
+data Function :: [*] -> * -> * where
+  Function :: Text -> Function a b
+  deriving (Show)
 newtype Variable a = Variable Text deriving (Show)
 newtype Constant a = Constant Text deriving (Show)
 
@@ -34,6 +36,16 @@ data Range = Range
     , end   :: Int
     , step  :: Int } deriving (Show)
 
+data HList :: [*] -> * where
+    Nil :: HList '[]
+    Cons :: a -> HList l -> HList (a ': l)
+
+instance Show (HList '[]) where
+    show Nil = "Nil"
+
+instance (Show a, Show (HList l)) => Show (HList (a ': l)) where
+    show (Cons x xs) = "Cons " ++ show x ++ " (" ++ show xs ++ ")"
+    
 data Expr a where
     Literal        :: (Show a) => a -> Expr a
     IntegerValue   :: Int -> Expr Int
@@ -43,11 +55,14 @@ data Expr a where
     VarReference   :: Variable a -> Expr a
     ConstReference :: Constant a -> Expr a
     ArrayIndex     :: Array a -> [Expr Int] -> Expr a
-    TNull          :: Expr ()
-    (:+:)          :: (Show a, Show b) => Expr a -> Expr b -> Expr (a, b)
-    Apply          :: (Show b) => Function a b -> Expr b -> Expr a
+    TUnit          :: Expr ()
+    TNull          :: Expr (HList '[])
+    (:+:)          :: (Show a) => Expr a -> Expr (HList b) -> Expr (HList (a ': b))
+    Apply          :: Function a b -> Expr (HList a) -> Expr b
 
-deriving instance Show a => Show (Expr a)
+infixr 1 :+:
+
+-- deriving instance Show a => Show (Expr a)
 
 data Stmt where
     VarDeclaration   :: (Declarable a, Show a) => Variable a -> Stmt
@@ -56,7 +71,7 @@ data Stmt where
     ParallelFor      :: Variable Int -> Range -> [Stmt] -> Stmt
     Assignment       :: (Show a) => Variable a -> Expr a -> Stmt
 
-deriving instance Show Stmt
+-- deriving instance Show Stmt
 
 data FunctionDecl a b = FunctionDecl
   { functionName :: Text

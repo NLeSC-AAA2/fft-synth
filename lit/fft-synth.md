@@ -134,8 +134,8 @@ transpose array@Array{shape, stride} = array
 Reshaping is only possible from a contiguous array. Otherwise the arithmetic of stepping through the resulting array would no longer be expressible in terms of a stride and offset.
 
 ``` {.haskell #array-methods}
-reshape :: Array a -> Shape -> Either Text (Array a)
-reshape array@Array{shape,stride} newShape
+reshape :: MonadError Text m => Shape -> Array a -> m (Array a)
+reshape newShape array
     | contiguous array = return $ array
         { shape = newShape
         , stride = fromShape newShape 1 }
@@ -151,8 +151,8 @@ The `select`, `extrude`, and `slice` methods do the same as the Numpy array slic
 | `a[:,None,:]`  | `extrude a 1`     | Extrude a new axis    |
 
 ``` {.haskell #array-methods}
-select :: Array a -> Int -> Int -> Either Text (Array a)
-select array@Array{shape,stride,offset} dim i = do
+select :: MonadError Text m => Int -> Int -> Array a -> m (Array a)
+select dim i array@Array{shape,stride,offset} = do
     rcheck "dim" (ndim array) dim
     rcheck "size" (shape !! dim) i
     return $ array
@@ -160,15 +160,15 @@ select array@Array{shape,stride,offset} dim i = do
         , stride = remove stride dim
         , offset = offset + (stride !! dim) * i }
 
-extrude :: Array a -> Int -> Either Text (Array a)
-extrude array@Array{shape,stride} dim = do
+extrude :: MonadError Text m => Int -> Array a -> m (Array a)
+extrude dim array@Array{shape,stride} = do
     rcheck "dim" (ndim array + 1) dim
     return $ array
         { shape  = insert shape dim 1
         , stride = insert stride dim ((stride !! dim) * (shape !! dim)) }
 
-slice :: Array a -> Int -> Int -> Int -> Int -> Either Text (Array a)
-slice array@Array{shape,stride,offset} dim a b step = do
+slice :: MonadError Text m => Int -> Int -> Int -> Int -> Array a -> m (Array a)
+slice dim a b step array@Array{shape,stride,offset} = do
     rcheck "dim" (ndim array) dim
     rcheck "a" ((shape !! dim) + 1) a
     rcheck "b" ((shape !! dim) + 1) b
@@ -294,7 +294,7 @@ describe "TwiddleFactors.makeTwiddle" $
 # Abstract Syntax Tree
 
 ``` {.haskell file=src/AST.hs}
-{-# LANGUAGE GADTs #-}
+{-# LANGUAGE GADTs,DataKinds,TypeOperators,KindSignatures #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE FlexibleInstances,UndecidableInstances #-}
@@ -313,7 +313,9 @@ class (Show a) => Declarable a where
   typename :: proxy a -> Text
 
 data Pointer a = Pointer deriving (Show)
-newtype Function a b = Function Text deriving (Show)
+data Function :: [*] -> * -> * where
+  Function :: Text -> Function a b
+  deriving (Show)
 newtype Variable a = Variable Text deriving (Show)
 newtype Constant a = Constant Text deriving (Show)
 
@@ -329,6 +331,16 @@ data Range = Range
     , end   :: Int
     , step  :: Int } deriving (Show)
 
+data HList :: [*] -> * where
+    Nil :: HList '[]
+    Cons :: a -> HList l -> HList (a ': l)
+
+instance Show (HList '[]) where
+    show Nil = "Nil"
+
+instance (Show a, Show (HList l)) => Show (HList (a ': l)) where
+    show (Cons x xs) = "Cons " ++ show x ++ " (" ++ show xs ++ ")"
+    
 data Expr a where
     Literal        :: (Show a) => a -> Expr a
     IntegerValue   :: Int -> Expr Int
@@ -338,11 +350,14 @@ data Expr a where
     VarReference   :: Variable a -> Expr a
     ConstReference :: Constant a -> Expr a
     ArrayIndex     :: Array a -> [Expr Int] -> Expr a
-    TNull          :: Expr ()
-    (:+:)          :: (Show a, Show b) => Expr a -> Expr b -> Expr (a, b)
-    Apply          :: (Show b) => Function a b -> Expr b -> Expr a
+    TUnit          :: Expr ()
+    TNull          :: Expr (HList '[])
+    (:+:)          :: (Show a) => Expr a -> Expr (HList b) -> Expr (HList (a ': b))
+    Apply          :: Function a b -> Expr (HList a) -> Expr b
 
-deriving instance Show a => Show (Expr a)
+infixr 1 :+:
+
+-- deriving instance Show a => Show (Expr a)
 
 data Stmt where
     VarDeclaration   :: (Declarable a, Show a) => Variable a -> Stmt
@@ -351,7 +366,7 @@ data Stmt where
     ParallelFor      :: Variable Int -> Range -> [Stmt] -> Stmt
     Assignment       :: (Show a) => Variable a -> Expr a -> Stmt
 
-deriving instance Show Stmt
+-- deriving instance Show Stmt
 
 data FunctionDecl a b = FunctionDecl
   { functionName :: Text
@@ -479,17 +494,120 @@ genTwiddle radix args = do
 # Generating larger FFT
 
 ``` {.haskell file=src/Synthesis.hs}
+{-# LANGUAGE DataKinds,GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE UndecidableInstances #-}
+
 module Synthesis where
 
-import Data.Complex
+import Data.Complex (Complex(..))
+import Data.Text (Text)
+
+import Data.Set (Set)
+import qualified Data.Set as S
+import qualified Data.Text as T
+import Data.List (sort)
 
 import AST
 import Array
+import Lib
+import Control.Monad.Except
 
--- type NoTwiddleCodelet = Function () 
+import Math.NumberTheory.Primes.Factorisation (factorise)
 
-planNoTwiddle :: RealFloat a => Function () b -> Array (Complex a) -> Array (Complex a) -> Expr ()
-planNoTwiddle f inp out = TNull
+type NoTwiddleCodelet a = Function
+  [ Array a, Array a
+  , Array a, Array a
+  , Int, Int, Int, Int, Int ] ()
+
+type TwiddleCodelet a = Function
+  [ Array a, Array a
+  , Array a
+  , Int, Int, Int, Int ] ()
+
+(!?) :: MonadError Text m => [a] -> Int -> m a
+[] !? _ = throwError "List index error."
+(x:xs) !? i
+  | i == 0    = return x
+  | otherwise = xs !? (i - 1)
+
+planNoTwiddle :: (MonadError Text m, RealFloat a) => NoTwiddleCodelet a -> Array (Complex a) -> Array (Complex a) -> m (Expr ())
+planNoTwiddle f inp out = do
+  is  <- stride inp !? 0
+  os  <- stride out !? 0
+  v   <- shape inp !? 1
+  ivs <- stride inp !? 1
+  ovs <- stride out !? 1
+  return $ Apply f (ArrayRef (realPart inp) :+: ArrayRef (imagPart inp) :+:
+                    ArrayRef (realPart out) :+: ArrayRef (imagPart out) :+:
+                    Literal is :+: Literal os :+: Literal v :+: Literal ivs :+: Literal ovs :+: TNull)
+
+planTwiddle :: (MonadError Text m, RealFloat a) => TwiddleCodelet a -> Array (Complex a) -> Array (Complex a) -> m (Expr ())
+planTwiddle f inp twiddle = do
+  rs  <- stride inp !? 0
+  me  <- shape inp !? 1
+  ms  <- stride inp !? 1
+  return $ Apply f (ArrayRef (realPart inp) :+: ArrayRef (imagPart inp) :+:
+                    ArrayRef (realPart twiddle) :+: Literal rs :+: Literal 0 :+: Literal me :+: Literal ms :+: TNull)
+
+data Codelet = Codelet
+  { codeletPrefix :: Text
+  , codeletRadix  :: Int }
+  deriving (Eq, Show, Ord)
+
+codeletName :: Codelet -> Text
+codeletName Codelet{..} = codeletPrefix <> "_" <> tshow codeletRadix
+
+factorsName :: Shape -> Text
+factorsName s = "w_" <> T.intercalate "_" (map tshow s)
+
+newtype Algorithm = Algorithm (Set Codelet, Set Shape, [Stmt])
+  deriving (Semigroup, Monoid)
+
+-- instance (Monad m) => Semigroup (m Algorithm) where
+--   a <> b = do
+--     a' <- a
+--     b' <- b
+--     return (a' <> b')
+
+instance (Monad m, Semigroup (m Algorithm)) => Monoid (m Algorithm) where
+  mempty = return mempty
+
+noTwiddleFFT :: (MonadError Text m, RealFloat a) => Int -> Array (Complex a) -> Array (Complex a) -> m Algorithm
+noTwiddleFFT n inp out = do
+  let codelet = Codelet "notw" n
+      f = Function (codeletName codelet) :: NoTwiddleCodelet a
+  plan <- planNoTwiddle f inp out
+  return $ Algorithm (S.fromList [codelet], mempty, [Expression plan])
+
+twiddleFFT :: (MonadError Text m, RealFloat a) => Int -> Array (Complex a) -> Array (Complex a) -> m Algorithm
+twiddleFFT n inp twiddle = do
+  let codelet = Codelet "twiddle" n
+      f = Function (codeletName codelet) :: TwiddleCodelet a
+  plan <- planTwiddle f inp twiddle
+  return $ Algorithm (S.fromList [codelet], mempty, [Expression plan])
+
+-- nFactorFFT :: (MonadError Text m, RealFloat a) => [Int] -> Array (Complex a) -> Array (Complex a) -> m Algorithm
+nFactorFFT :: RealFloat a => [Int] -> Array (Complex a) -> Array (Complex a) -> Either Text Algorithm
+nFactorFFT [] _ _         = return mempty
+nFactorFFT [x] inp out    = noTwiddleFFT x inp out
+nFactorFFT (x:xs) inp out = do
+  let n = product xs
+      w_array = Array (factorsName [n, x]) [n, x] (fromShape [n, x] 1) 0
+      subfft i = do {
+        inp' <- reshape [n, x] =<< select 1 i inp;
+        out' <- reshape [x, n] =<< select 1 i out;
+        (nFactorFFT xs (transpose inp') out') <> (twiddleFFT x (transpose out') w_array) } :: Either Text Algorithm
+
+  l <- shape inp !? 1
+  mconcat (map subfft [0..l])
+
+factors :: Int -> [Int]
+factors n = sort $ concatMap (\(i, m) -> take m $ repeat (fromIntegral i :: Int)) (factorise $ fromIntegral n)
+
+fullFactorFFT :: RealFloat a => Int -> Array (Complex a) -> Array (Complex a) -> Either Text Algorithm
+fullFactorFFT n = nFactorFFT (factors n)
 ```
 
 # Appendix: Miscellaneous functions

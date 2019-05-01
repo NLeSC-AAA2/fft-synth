@@ -8,7 +8,7 @@ gen_mdct.native gen_notw_complex.native gen_twiddle_complex.native
 .PHONY: all clean
 
 all:
-	$(OCAMLBUILD) -classic-display -libs unix,nums $(GENFFT_NATIVE)
+	$(OCAMLBUILD) -classic-display -use-ocamlfind -pkg num -libs unix $(GENFFT_NATIVE)
 
 clean:
 	$(OCAMLBUILD) -classic-display -clean
