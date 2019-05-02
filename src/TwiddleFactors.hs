@@ -3,10 +3,13 @@ module TwiddleFactors where
 
 import Data.Complex
 
+import Data.Text (Text)
+import qualified Data.Text as T
 import Data.Vector.Unboxed (Vector)
 import qualified Data.Vector.Unboxed as V
 
 import Array
+import Lib
 
 -- ------ begin <<twiddle-factors-w>>[0]
 w :: RealFloat a => Int -> Int -> Complex a
@@ -21,6 +24,9 @@ indices :: Shape -> [[Int]]
 indices = foldr (\ n -> concatMap (\ idcs -> map (: idcs) [0 .. n-1])) [[]]
 
 makeTwiddle :: Shape -> Vector (Complex Double)
-makeTwiddle shape = V.fromList $ map (multiW shape) $ indices shape
+makeTwiddle shape = V.drop (head shape) $ V.fromList $ map (multiW shape) $ indices shape
 -- ------ end
+
+factorsName :: Shape -> Text
+factorsName s = "w_" <> T.intercalate "_" (map tshow s)
 -- ------ end

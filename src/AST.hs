@@ -17,12 +17,14 @@ import Lib
 class (Show a) => Declarable a where
   typename :: proxy a -> Text
 
+data NameSpace = Static | Global | Constant
+
 data Pointer a = Pointer deriving (Show)
 data Function :: [*] -> * -> * where
   Function :: Text -> Function a b
   deriving (Show)
 newtype Variable a = Variable Text deriving (Show)
-newtype Constant a = Constant Text deriving (Show)
+-- newtype Constant a = Constant Text deriving (Show)
 
 instance Declarable Int where
   typename _ = "int"
@@ -53,7 +55,7 @@ data Expr a where
     -- ComplexValue   :: Complex Double -> Expr (Complex Double)
     ArrayRef       :: Array a -> Expr (Array a)
     VarReference   :: Variable a -> Expr a
-    ConstReference :: Constant a -> Expr a
+    -- ConstReference :: Constant a -> Expr a
     ArrayIndex     :: Array a -> [Expr Int] -> Expr a
     TUnit          :: Expr ()
     TNull          :: Expr (HList '[])
@@ -70,6 +72,7 @@ data Stmt where
     Expression       :: Expr () -> Stmt
     ParallelFor      :: Variable Int -> Range -> [Stmt] -> Stmt
     Assignment       :: (Show a) => Variable a -> Expr a -> Stmt
+    FunctionDef      :: Function a b -> [Stmt] -> [Stmt] -> Stmt
 
 -- deriving instance Show Stmt
 
@@ -85,7 +88,9 @@ instance Syntax (Expr a) where
   generate (Literal x) = tshow x
   generate (IntegerValue x) = tshow x
   generate (RealValue x) = tshow x
-  generate (ArrayRef x) = name x <> " + " <> tshow (offset x)
+  generate (ArrayRef x)
+    | (offset x) == 0 = name x
+    | otherwise       = name x <> " + " <> tshow (offset x)
   generate (VarReference (Variable x)) = x
   generate (ConstReference (Constant x)) = x
   generate (ArrayIndex a i) = name a <> "[<index expression>]"

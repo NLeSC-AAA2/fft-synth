@@ -1,16 +1,25 @@
 -- ------ language="Haskell" file="src/Codelet.hs"
-module Codelet where
+{-# LANGUAGE RecordWildCards #-}
+
+module Codelet
+  ( Codelet(..)
+  , CodeletType(..)
+  , codeletName ) where
 
 import Data.Text (Text)
-import qualified Data.Text as T
-
 import Lib
-import AST
+
+data CodeletType = Twiddle | NoTwiddle deriving (Eq, Ord)
+
+instance Show CodeletType where
+  show Twiddle = "twiddle"
+  show NoTwiddle = "notw"
 
 data Codelet = Codelet
-    { prefix  :: Text
-    , radix   :: Int }
+  { codeletType  :: CodeletType
+  , codeletRadix :: Int }
+  deriving (Eq, Show, Ord)
 
 codeletName :: Codelet -> Text
-codeletName c = prefix c <> "_" <> tshow (radix c)
+codeletName Codelet{..} = tshow codeletType <> "_" <> tshow codeletRadix
 -- ------ end

@@ -85,7 +85,10 @@ reshape newShape array
     | contiguous array = return $ array
         { shape = newShape
         , stride = fromShape newShape 1 }
-    | otherwise = throwError "Cannot reshape non-contiguous array."
+    | (ndim array) == 1 = return $ array
+        { shape = newShape
+        , stride = fromShape newShape (head $ stride array) }
+    | otherwise = throwError "Cannot reshape multi-dimensional non-contiguous array."
 -- ------ end
 -- ------ begin <<array-methods>>[6]
 select :: MonadError Text m => Int -> Int -> Array a -> m (Array a)

@@ -7,6 +7,7 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import System.Process
 import Data.Maybe
+import Codelet (Codelet(..), codeletName)
 
 import Lib (tshow)
 
@@ -85,4 +86,9 @@ genTwiddle :: Int -> GenFFTArgs -> IO Text
 genTwiddle radix args = do
   let name' = fromMaybe ("twiddle_" <> tshow radix) (name args)
   genFFT "twiddle" $ ["-n", tshow radix] <> argList args{name=Just name'}
+
+gen :: GenFFTArgs -> Codelet -> IO Text
+gen args codelet@Codelet{..} = do
+  let name' = codeletName codelet
+  genFFT (tshow codeletType) $ ["-n", tshow codeletRadix] <> argList args{name=Just name'}
 -- ------ end

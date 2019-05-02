@@ -6,18 +6,22 @@
 
 module Synthesis where
 
+-- import Debug.Trace
+
 import Data.Complex (Complex(..))
 import Data.Text (Text)
+-- import qualified Data.Text as T
 
 import Data.Set (Set)
 import qualified Data.Set as S
-import qualified Data.Text as T
 import Data.List (sort)
 
 import AST
 import Array
 import Lib
 import Control.Monad.Except
+import Codelet
+import TwiddleFactors
 
 import Math.NumberTheory.Primes.Factorisation (factorise)
 
@@ -32,7 +36,7 @@ type TwiddleCodelet a = Function
   , Int, Int, Int, Int ] ()
 
 (!?) :: MonadError Text m => [a] -> Int -> m a
-[] !? _ = throwError "List index error."
+[] !? i = throwError $ "List index error: list " <> tshow (i + 1) <> " too short."
 (x:xs) !? i
   | i == 0    = return x
   | otherwise = xs !? (i - 1)
@@ -56,19 +60,13 @@ planTwiddle f inp twiddle = do
   return $ Apply f (ArrayRef (realPart inp) :+: ArrayRef (imagPart inp) :+:
                     ArrayRef (realPart twiddle) :+: Literal rs :+: Literal 0 :+: Literal me :+: Literal ms :+: TNull)
 
-data Codelet = Codelet
-  { codeletPrefix :: Text
-  , codeletRadix  :: Int }
-  deriving (Eq, Show, Ord)
+data Algorithm = Algorithm
+  { codelets   :: Set Codelet
+  , twiddles   :: Set Shape
+  , statements :: [Stmt] }
 
-codeletName :: Codelet -> Text
-codeletName Codelet{..} = codeletPrefix <> "_" <> tshow codeletRadix
-
-factorsName :: Shape -> Text
-factorsName s = "w_" <> T.intercalate "_" (map tshow s)
-
-newtype Algorithm = Algorithm (Set Codelet, Set Shape, [Stmt])
-  deriving (Semigroup, Monoid)
+defineTwiddles :: Shape -> Algorithm
+defineTwiddles shape = Algorithm mempty (S.fromList [shape]) mempty
 
 -- instance (Monad m) => Semigroup (m Algorithm) where
 --   a <> b = do
@@ -76,37 +74,52 @@ newtype Algorithm = Algorithm (Set Codelet, Set Shape, [Stmt])
 --     b' <- b
 --     return (a' <> b')
 
+instance Semigroup Algorithm where
+  (Algorithm c1 t1 s1) <> (Algorithm c2 t2 s2) = Algorithm (c1 <> c2) (t1 <> t2) (s1 <> s2)
+
+instance Monoid Algorithm where
+  mempty = Algorithm mempty mempty mempty
+
+instance {-# OVERLAPPING #-} Semigroup (Either Text Algorithm) where
+  (Left a) <> _ = Left a
+  _ <> (Left b) = Left b
+  (Right a) <> (Right b) = Right (a <> b)
+
 instance (Monad m, Semigroup (m Algorithm)) => Monoid (m Algorithm) where
   mempty = return mempty
 
 noTwiddleFFT :: (MonadError Text m, RealFloat a) => Int -> Array (Complex a) -> Array (Complex a) -> m Algorithm
 noTwiddleFFT n inp out = do
-  let codelet = Codelet "notw" n
+  let codelet = Codelet NoTwiddle n
       f = Function (codeletName codelet) :: NoTwiddleCodelet a
   plan <- planNoTwiddle f inp out
-  return $ Algorithm (S.fromList [codelet], mempty, [Expression plan])
+  return $ Algorithm (S.fromList [codelet]) mempty [Expression plan]
 
 twiddleFFT :: (MonadError Text m, RealFloat a) => Int -> Array (Complex a) -> Array (Complex a) -> m Algorithm
 twiddleFFT n inp twiddle = do
-  let codelet = Codelet "twiddle" n
+  let codelet = Codelet Twiddle n
       f = Function (codeletName codelet) :: TwiddleCodelet a
   plan <- planTwiddle f inp twiddle
-  return $ Algorithm (S.fromList [codelet], mempty, [Expression plan])
+  return $ Algorithm (S.fromList [codelet]) mempty [Expression plan]
 
 -- nFactorFFT :: (MonadError Text m, RealFloat a) => [Int] -> Array (Complex a) -> Array (Complex a) -> m Algorithm
 nFactorFFT :: RealFloat a => [Int] -> Array (Complex a) -> Array (Complex a) -> Either Text Algorithm
 nFactorFFT [] _ _         = return mempty
 nFactorFFT [x] inp out    = noTwiddleFFT x inp out
 nFactorFFT (x:xs) inp out = do
+  -- | trace ("nFactorFFT " ++ show (x:xs) ++ " " ++ show inp ++ " " ++ show out) True = do
   let n = product xs
       w_array = Array (factorsName [n, x]) [n, x] (fromShape [n, x] 1) 0
-      subfft i = do {
-        inp' <- reshape [n, x] =<< select 1 i inp;
-        out' <- reshape [x, n] =<< select 1 i out;
-        (nFactorFFT xs (transpose inp') out') <> (twiddleFFT x (transpose out') w_array) } :: Either Text Algorithm
+      subfft i = do
+          -- | trace ("subfft " ++ show i) True = do 
+          inp' <- reshape [n, x] =<< select 1 i inp
+          out' <- reshape [x, n] =<< select 1 i out
+          (nFactorFFT xs (transpose inp') out')
+            <> (twiddleFFT x (transpose out') w_array)
+            <> Right (defineTwiddles [n, x])
 
   l <- shape inp !? 1
-  mconcat (map subfft [0..l])
+  mconcat (map subfft [0..(l-1)])
 
 factors :: Int -> [Int]
 factors n = sort $ concatMap (\(i, m) -> take m $ repeat (fromIntegral i :: Int)) (factorise $ fromIntegral n)
