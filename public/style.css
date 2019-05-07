@@ -2,10 +2,10 @@ body
 {
     margin:		0 auto 0 250pt;
     max-width:	600pt;
-    background: #efefef;
+    background: white;
     padding:	0 10pt 0 0;
     /* font-family: "Cantarell", "Verdana", sans-serif; */
-    font-family: "Bitstream Charter", serif;
+    font-family: "Akkurat Light", arial;
     font-size: 14pt;
     counter-reset: h1;
 }
@@ -33,6 +33,7 @@ a {
 }
 
 h2 {
+    color: #00aeef;
     counter-reset: h2;
 }
 
@@ -57,15 +58,20 @@ h4:before {
 
 #TOC
 {
+    background-color: #00aeef;
+    background-image:url('nlesc-logo.svg');
+    background-repeat: no-repeat;
+    background-position: center 20pt;
+    font-family: "Akkurat", arial;
     font-size: 10pt;
     position: fixed;
     top: 0pt;
     left: 0pt;
     bottom: 0pt;
-    background: rgb(0, 0, 0);
     border-right: solid thin rgb(255, 255, 255);
     padding: 20pt;
     padding-right: 25pt;
+    padding-top: 50pt;
     width: 150pt;
     color: #FFF;
 }
@@ -80,7 +86,7 @@ h4:before {
 
 code
 {
-    font-family: Courier, monospace;
+    font-family: "Inconsolata", monospace;
 }
 
 .sourceCode, .elm

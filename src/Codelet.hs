@@ -2,12 +2,15 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE DataKinds,GeneralizedNewtypeDeriving #-}
 
-import AST
-
 module Codelet
   ( Codelet(..)
   , CodeletType(..)
-  , codeletName ) where
+  , codeletName
+  , NoTwiddleCodelet
+  , TwiddleCodelet ) where
+
+import AST
+import Array
 
 import Data.Text (Text)
 import Lib

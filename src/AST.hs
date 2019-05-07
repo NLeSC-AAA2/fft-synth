@@ -70,11 +70,10 @@ data Range = Range
 
 data Stmt where
     VarDeclaration   :: (Declarable a, Show a) => Variable a -> Stmt
-    ConstDeclaration :: (Declarable a, Show a) => Constant a -> Stmt
     Expression       :: Expr () -> Stmt
     ParallelFor      :: Variable Int -> Range -> [Stmt] -> Stmt
     Assignment       :: (Show a) => Variable a -> Expr a -> Stmt
-    FunctionDef      :: Function a b -> [Stmt] -> [Stmt] -> Stmt
+    -- FunctionDef      :: Function a b -> [Stmt] -> [Stmt] -> Stmt
 -- ------ end
 
 data FunctionDecl a b = FunctionDecl
@@ -94,16 +93,15 @@ instance Syntax (Expr a) where
     | (offset x) == 0 = name x
     | otherwise       = name x <> " + " <> tshow (offset x)
   generate (VarReference (Variable x)) = x
-  generate (ConstReference (Constant x)) = x
   generate (ArrayIndex a i) = name a <> "[<index expression>]"
   generate (Apply (Function f) a) = f <> "(" <> generate a <> ")"
   generate (a :+: TNull) = generate a
   generate (a :+: b) = generate a <> ", " <> generate b
   generate TNull = ""
+  generate TUnit = ""
 
 instance Syntax Stmt where
   generate (VarDeclaration v@(Variable x)) = typename v <> " " <> x <> ";"
-  generate (ConstDeclaration v@(Constant x)) = typename v <> " const " <> x <> ";"
   generate (Expression e) = generate e <> ";"
   generate (ParallelFor (Variable v) (Range a b s) body) =
     "for (int " <> v <> "=" <> tshow a <> ";" <> v <> "<"
