@@ -2,9 +2,51 @@
 title: FFT Synthesis
 ---
 
-# Array arithmetic
+# Cooley-Tukey algorithm
 
-We will express different stages of the FFT by applying a vectorised FFT on a multi-dimensional strided numeric array.
+(sampled from Frigo 1999. I changed array indices to $k, l, m$, $n$ denoting the length of the array.)
+
+The (forward) discrete Fourier transform of $X$ is the array $Y$ given by
+
+$$Y[l] = \sum_{k=0}^{n-1} X[k] w_n^{-kl},$$ {#eq:dft}
+
+where 
+
+$$w_n = \exp\left(\frac{2\pi i}{n}\right).$$ {#eq:wn}
+
+So $w_n^{-kl}$ denotes $w_n$ *to the power of* $-kl$.
+
+In the case that $X$ is real valued, $Y$ will have *hermitian symmetry*
+
+$$Y[n - k] = Y^*[k].$$ {#eq:hermitian-symmetry}
+
+The backward DFT flips the sign at the exponent of $w_n$, giving
+
+$$Y[l] = \sum_{k=0}^{n-1} X[k] w_n^{kl}.$$ {#eq:idft}
+
+Now suppose that $n$ can be factored into $n = n_1 n_2$. We may now view the arrays $X$ and $Y$ in a rectangular shape, where
+
+$$X[k] = X[k_1 n_2 + k_2] = X[k_1, k_2].$$
+
+Also, let $Y$ take the transposed shape of $X$,
+
+$$Y[l] = Y[l_1 + l_2 n_1] = Y[l_1, l_2].$$
+
+Then +@eq:dft can be written as
+
+$$Y[l_1, l_2] = \sum_{k_2 = 0}^{n_2 - 1} \left[\left(\sum_{k_1 = 0}^{n_1-1} X[k_1, k_2] w_{n_1}^{-k_1 l_1}\right) w_n^{l_1 k_2}\right] w_{n_2}^{-l_2 k_2}.$$
+
+Also known as the **Cooley-Tukey fast Fourier transform**.
+
+This separates the DFT in an inner and outer transform, of sizes $n_1$ and $n_2$. The output of the inner transform is multiplied by **twiddle factors** $w_n^{-l_1 k_2}$, before the outer transform is done.
+
+## Array arithmetic
+
+![Cooley-Tukey algorithm for an $n=20$ array.](cooley-tukey-20.svg){#fig:cooley-tukey-array}
+
+We will express different stages of the FFT by applying a vectorised FFT on a multi-dimensional strided numeric array. In the following example we compute an $n=20$ transform by doing four radix-5 transforms followed by five $2 \times 2$ transforms. The abstraction of using multi-dimensional arrays is a useful one to keep track of the offsets and strides involved, see +@fig:cooley-tukey-array.
+
+We define the `Array` module to handle array manipulation in abstraction, similar to array slicing in NumPy.
 
 ``` {.haskell file=src/Array.hs}
 {-# LANGUAGE DuplicateRecordFields #-}
@@ -21,15 +63,14 @@ import Control.Monad.Except
 
 import Lib
 
-
 <<array-numeric-class>>
 <<array-types>>
 <<array-methods>>
 ```
 
-## Numeric types
+### Numeric types
 
-The `NumericType` type-class is defined so that we can constrain functions to work with `Float`, `Double` or `Complex a`. This also gives information on the byte size of each numeric type. We need to give `byteSize` an argument for it to be able to deduce the type.
+The `NumericType` type-class is defined so that we can constrain functions to work with `Float`, `Double` or `Complex a`. This also gives information on the byte size of each numeric type. We need to give `byteSize` an argument for it to be able to deduce the type, for which we use the `Proxy` type.
 
 ``` {.haskell #array-numeric-class}
 class NumericType a where
@@ -45,7 +86,7 @@ instance (NumericType a) => NumericType (Complex a) where
     byteSize _ = 2 * (byteSize (Proxy :: Proxy a))
 ```
 
-## Array structure
+### Array structure
 
 An array has a shape, stride and offset, in addition to a name meant to identify the array in question.
 
@@ -58,10 +99,6 @@ data Array a = Array
     , shape    :: Shape
     , stride   :: Stride
     , offset   :: Int } deriving (Show)
-
--- data ArrayIndex a = ArrayIndex
---    { name     :: Text
---     , index    :: Int } deriving (Show)
 
 floatArray :: Text -> Shape -> Array Float
 floatArray name shape = Array name shape (fromShape shape 1) 0
@@ -131,7 +168,7 @@ transpose array@Array{shape, stride} = array
     , stride = reverse stride }
 ```
 
-Reshaping is only possible from a contiguous array. Otherwise the arithmetic of stepping through the resulting array would no longer be expressible in terms of a stride and offset.
+Reshaping is only possible from an array that can be flattened to a one-dimensional array with constant stride. Otherwise the arithmetic of stepping through the resulting array would no longer be expressible in terms of a stride and offset.
 
 ``` {.haskell #array-methods}
 reshape :: MonadError Text m => Shape -> Array a -> m (Array a)

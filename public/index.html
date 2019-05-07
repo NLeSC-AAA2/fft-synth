@@ -5,13 +5,13 @@
   <meta name="generator" content="pandoc" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
   <title>FFT Synthesis</title>
-  <style type="text/css">
+  <style>
       code{white-space: pre-wrap;}
       span.smallcaps{font-variant: small-caps;}
       span.underline{text-decoration: underline;}
       div.column{display: inline-block; vertical-align: top; width: 50%;}
   </style>
-  <style type="text/css">
+  <style>
 a.sourceLine { display: inline-block; line-height: 1.25; }
 a.sourceLine { pointer-events: none; color: inherit; text-decoration: inherit; }
 a.sourceLine:empty { height: 1.2em; }
@@ -85,11 +85,10 @@ code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warni
 <header id="title-block-header">
 <h1 class="title">FFT Synthesis</h1>
 </header>
-<nav id="TOC">
+<nav id="TOC" role="doc-toc">
 <ul>
-<li><a href="#array-arithmetic">Array arithmetic</a><ul>
-<li><a href="#numeric-types">Numeric types</a></li>
-<li><a href="#array-structure">Array structure</a></li>
+<li><a href="#cooley-tukey-algorithm">Cooley-Tukey algorithm</a><ul>
+<li><a href="#array-arithmetic">Array arithmetic</a></li>
 <li><a href="#array-methods">Array methods</a></li>
 </ul></li>
 <li><a href="#codelets">Codelets</a></li>
@@ -97,14 +96,38 @@ code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warni
 <li><a href="#unit-tests">Unit tests</a></li>
 </ul></li>
 <li><a href="#abstract-syntax-tree">Abstract Syntax Tree</a></li>
-<li><a href="#miscellaneous-functions">Miscellaneous functions</a><ul>
+<li><a href="#calling-genfft">Calling GenFFT</a></li>
+<li><a href="#generating-larger-fft">Generating larger FFT</a></li>
+<li><a href="#appendix-miscellaneous-functions">Appendix: Miscellaneous functions</a><ul>
 <li><a href="#list-manipulation">List manipulation</a></li>
 </ul></li>
 <li><a href="#unit-tests-1">Unit tests</a></li>
 </ul>
 </nav>
-<h2 id="array-arithmetic">Array arithmetic</h2>
-<p>We will express different stages of the FFT by applying a vectorised FFT on a multi-dimensional strided numeric array.</p>
+<h2 id="cooley-tukey-algorithm">Cooley-Tukey algorithm</h2>
+<p>(sampled from Frigo 1999. I changed array indices to <span class="math inline">\(k, l, m\)</span>, <span class="math inline">\(n\)</span> denoting the length of the array.)</p>
+<p>The (forward) discrete Fourier transform of <span class="math inline">\(X\)</span> is the array <span class="math inline">\(Y\)</span> given by</p>
+<p><span id="eq:dft" style="display: inline-block; position: relative; width: 100%"><span class="math display">\[Y[l] = \sum_{k=0}^{n-1} X[k] w_n^{-kl},\]</span><span style="position: absolute; right: 0em; top: 50%; line-height:0; text-align: right">(1)</span></span> </p>
+<p>where</p>
+<p><span id="eq:wn" style="display: inline-block; position: relative; width: 100%"><span class="math display">\[w_n = \exp\left(\frac{2\pi i}{n}\right).\]</span><span style="position: absolute; right: 0em; top: 50%; line-height:0; text-align: right">(2)</span></span> </p>
+<p>So <span class="math inline">\(w_n^{-kl}\)</span> denotes <span class="math inline">\(w_n\)</span> <em>to the power of</em> <span class="math inline">\(-kl\)</span>.</p>
+<p>In the case that <span class="math inline">\(X\)</span> is real valued, <span class="math inline">\(Y\)</span> will have <em>hermitian symmetry</em></p>
+<p><span id="eq:hermitian-symmetry" style="display: inline-block; position: relative; width: 100%"><span class="math display">\[Y[n - k] = Y^*[k].\]</span><span style="position: absolute; right: 0em; top: 50%; line-height:0; text-align: right">(3)</span></span> </p>
+<p>The backward DFT flips the sign at the exponent of <span class="math inline">\(w_n\)</span>, giving</p>
+<p><span id="eq:idft" style="display: inline-block; position: relative; width: 100%"><span class="math display">\[Y[l] = \sum_{k=0}^{n-1} X[k] w_n^{kl}.\]</span><span style="position: absolute; right: 0em; top: 50%; line-height:0; text-align: right">(4)</span></span> </p>
+<p>Now suppose that <span class="math inline">\(n\)</span> can be factored into <span class="math inline">\(n = n_1 n_2\)</span>. We may now view the arrays <span class="math inline">\(X\)</span> and <span class="math inline">\(Y\)</span> in a rectangular shape, where</p>
+<p><span class="math display">\[X[k] = X[k_1 n_2 + k_2] = X[k_1, k_2].\]</span></p>
+<p>Also, let <span class="math inline">\(Y\)</span> take the transposed shape of <span class="math inline">\(X\)</span>,</p>
+<p><span class="math display">\[Y[l] = Y[l_1 + l_2 n_1] = Y[l_1, l_2].\]</span></p>
+<p>Then eq. <a href="#eq:dft">1</a> can be written as</p>
+<p><span class="math display">\[Y[l_1, l_2] = \sum_{k_2 = 0}^{n_2 - 1} \left[\left(\sum_{k_1 = 0}^{n_1-1} X[k_1, k_2] w_{n_1}^{-k_1 l_1}\right) w_n^{l_1 k_2}\right] w_{n_2}^{-l_2 k_2}.\]</span></p>
+<p>Also known as the <strong>Cooley-Tukey fast Fourier transform</strong>.</p>
+<p>This separates the DFT in an inner and outer transform, of sizes <span class="math inline">\(n_1\)</span> and <span class="math inline">\(n_2\)</span>. The output of the inner transform is multiplied by <strong>twiddle factors</strong> <span class="math inline">\(w_n^{-l_1 k_2}\)</span>, before the outer transform is done.</p>
+<h3 id="array-arithmetic">Array arithmetic</h3>
+<figure>
+<img src="cooley-tukey-20.svg" alt="Figure 1: Cooley-Tukey algorithm for an n=20 array." id="fig:cooley-tukey-array" /><figcaption><span>Figure 1:</span> Cooley-Tukey algorithm for an <span class="math inline">\(n=20\)</span> array.</figcaption>
+</figure>
+<p>We will express different stages of the FFT by applying a vectorised FFT on a multi-dimensional strided numeric array. In the following example we compute an <span class="math inline">\(n=20\)</span> transform by doing four radix-5 transforms followed by five <span class="math inline">\(2 \times 2\)</span> transforms. The abstraction of using multi-dimensional arrays is a useful one to keep track of the offsets and strides involved, see fig. <a href="#fig:cooley-tukey-array">1</a>.</p>
 <p><em>file: «src/Array.hs»=</em></p>
 <div class="sourceCode" id="cb1"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb1-1" title="1"><span class="ot">{-# LANGUAGE DuplicateRecordFields #-}</span></a>
 <a class="sourceLine" id="cb1-2" title="2"></a>
@@ -121,91 +144,91 @@ code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warni
 <a class="sourceLine" id="cb1-13" title="13"><span class="kw">import</span> <span class="dt">Lib</span></a>
 <a class="sourceLine" id="cb1-14" title="14"></a>
 <a class="sourceLine" id="cb1-15" title="15"></a>
-<a class="sourceLine" id="cb1-16" title="16"><span class="fu">&lt;&lt;</span>array<span class="fu">-</span>numeric<span class="fu">-</span><span class="kw">class</span><span class="fu">&gt;&gt;</span></a>
-<a class="sourceLine" id="cb1-17" title="17"><span class="fu">&lt;&lt;</span>array<span class="fu">-</span>types<span class="fu">&gt;&gt;</span></a>
-<a class="sourceLine" id="cb1-18" title="18"><span class="fu">&lt;&lt;</span>array<span class="fu">-</span>methods<span class="fu">&gt;&gt;</span></a></code></pre></div>
-<h3 id="numeric-types">Numeric types</h3>
+<a class="sourceLine" id="cb1-16" title="16"><span class="op">&lt;&lt;</span>array<span class="op">-</span>numeric<span class="op">-</span><span class="kw">class</span><span class="op">&gt;&gt;</span></a>
+<a class="sourceLine" id="cb1-17" title="17"><span class="op">&lt;&lt;</span>array<span class="op">-</span>types<span class="op">&gt;&gt;</span></a>
+<a class="sourceLine" id="cb1-18" title="18"><span class="op">&lt;&lt;</span>array<span class="op">-</span>methods<span class="op">&gt;&gt;</span></a></code></pre></div>
+<h4 id="numeric-types">Numeric types</h4>
 <p>The <code>NumericType</code> type-class is defined so that we can constrain functions to work with <code>Float</code>, <code>Double</code> or <code>Complex a</code>. This also gives information on the byte size of each numeric type. We need to give <code>byteSize</code> an argument for it to be able to deduce the type.</p>
 <p><em>«array-numeric-class»=</em></p>
 <div class="sourceCode" id="array-numeric-class"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="array-numeric-class-1" title="1"><span class="kw">class</span> <span class="dt">NumericType</span> a <span class="kw">where</span></a>
 <a class="sourceLine" id="array-numeric-class-2" title="2"><span class="ot">    byteSize ::</span> proxy a <span class="ot">-&gt;</span> <span class="dt">Int</span></a>
 <a class="sourceLine" id="array-numeric-class-3" title="3"></a>
 <a class="sourceLine" id="array-numeric-class-4" title="4"><span class="kw">instance</span> <span class="dt">NumericType</span> <span class="dt">Float</span> <span class="kw">where</span></a>
-<a class="sourceLine" id="array-numeric-class-5" title="5">    byteSize _ <span class="fu">=</span> <span class="dv">4</span></a>
+<a class="sourceLine" id="array-numeric-class-5" title="5">    byteSize _ <span class="ot">=</span> <span class="dv">4</span></a>
 <a class="sourceLine" id="array-numeric-class-6" title="6"></a>
 <a class="sourceLine" id="array-numeric-class-7" title="7"><span class="kw">instance</span> <span class="dt">NumericType</span> <span class="dt">Double</span> <span class="kw">where</span></a>
-<a class="sourceLine" id="array-numeric-class-8" title="8">    byteSize _ <span class="fu">=</span> <span class="dv">8</span></a>
+<a class="sourceLine" id="array-numeric-class-8" title="8">    byteSize _ <span class="ot">=</span> <span class="dv">8</span></a>
 <a class="sourceLine" id="array-numeric-class-9" title="9"></a>
 <a class="sourceLine" id="array-numeric-class-10" title="10"><span class="kw">instance</span> (<span class="dt">NumericType</span> a) <span class="ot">=&gt;</span> <span class="dt">NumericType</span> (<span class="dt">Complex</span> a) <span class="kw">where</span></a>
-<a class="sourceLine" id="array-numeric-class-11" title="11">    byteSize _ <span class="fu">=</span> <span class="dv">2</span> <span class="fu">*</span> (byteSize (<span class="dt">Proxy</span><span class="ot"> ::</span> <span class="dt">Proxy</span> a))</a></code></pre></div>
-<h3 id="array-structure">Array structure</h3>
+<a class="sourceLine" id="array-numeric-class-11" title="11">    byteSize _ <span class="ot">=</span> <span class="dv">2</span> <span class="op">*</span> (byteSize (<span class="dt">Proxy</span><span class="ot"> ::</span> <span class="dt">Proxy</span> a))</a></code></pre></div>
+<h4 id="array-structure">Array structure</h4>
 <p>An array has a shape, stride and offset, in addition to a name meant to identify the array in question.</p>
 <p><em>«array-types»=</em></p>
-<div class="sourceCode" id="array-types"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="array-types-1" title="1"><span class="kw">type</span> <span class="dt">Shape</span> <span class="fu">=</span> [<span class="dt">Int</span>]</a>
-<a class="sourceLine" id="array-types-2" title="2"><span class="kw">type</span> <span class="dt">Stride</span> <span class="fu">=</span> [<span class="dt">Int</span>]</a>
+<div class="sourceCode" id="array-types"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="array-types-1" title="1"><span class="kw">type</span> <span class="dt">Shape</span> <span class="ot">=</span> [<span class="dt">Int</span>]</a>
+<a class="sourceLine" id="array-types-2" title="2"><span class="kw">type</span> <span class="dt">Stride</span> <span class="ot">=</span> [<span class="dt">Int</span>]</a>
 <a class="sourceLine" id="array-types-3" title="3"></a>
-<a class="sourceLine" id="array-types-4" title="4"><span class="kw">data</span> <span class="dt">Array</span> a <span class="fu">=</span> <span class="dt">Array</span></a>
+<a class="sourceLine" id="array-types-4" title="4"><span class="kw">data</span> <span class="dt">Array</span> a <span class="ot">=</span> <span class="dt">Array</span></a>
 <a class="sourceLine" id="array-types-5" title="5">    {<span class="ot"> name     ::</span> <span class="dt">Text</span></a>
 <a class="sourceLine" id="array-types-6" title="6">    ,<span class="ot"> shape    ::</span> <span class="dt">Shape</span></a>
 <a class="sourceLine" id="array-types-7" title="7">    ,<span class="ot"> stride   ::</span> <span class="dt">Stride</span></a>
 <a class="sourceLine" id="array-types-8" title="8">    ,<span class="ot"> offset   ::</span> <span class="dt">Int</span> } <span class="kw">deriving</span> (<span class="dt">Show</span>)</a>
 <a class="sourceLine" id="array-types-9" title="9"></a>
-<a class="sourceLine" id="array-types-10" title="10"><span class="kw">data</span> <span class="dt">ArrayIndex</span> a <span class="fu">=</span> <span class="dt">ArrayIndex</span></a>
-<a class="sourceLine" id="array-types-11" title="11">    {<span class="ot"> name     ::</span> <span class="dt">Text</span></a>
-<a class="sourceLine" id="array-types-12" title="12">    ,<span class="ot"> index    ::</span> <span class="dt">Int</span> } <span class="kw">deriving</span> (<span class="dt">Show</span>)</a>
+<a class="sourceLine" id="array-types-10" title="10"><span class="co">-- data ArrayIndex a = ArrayIndex</span></a>
+<a class="sourceLine" id="array-types-11" title="11"><span class="co">--    { name     :: Text</span></a>
+<a class="sourceLine" id="array-types-12" title="12"><span class="co">--     , index    :: Int } deriving (Show)</span></a>
 <a class="sourceLine" id="array-types-13" title="13"></a>
 <a class="sourceLine" id="array-types-14" title="14"><span class="ot">floatArray ::</span> <span class="dt">Text</span> <span class="ot">-&gt;</span> <span class="dt">Shape</span> <span class="ot">-&gt;</span> <span class="dt">Array</span> <span class="dt">Float</span></a>
-<a class="sourceLine" id="array-types-15" title="15">floatArray name shape <span class="fu">=</span> <span class="dt">Array</span> name shape (fromShape shape <span class="dv">1</span>) <span class="dv">0</span></a></code></pre></div>
+<a class="sourceLine" id="array-types-15" title="15">floatArray name shape <span class="ot">=</span> <span class="dt">Array</span> name shape (fromShape shape <span class="dv">1</span>) <span class="dv">0</span></a></code></pre></div>
 <p>The stride gives the distance in memory (counted in number of items, not bytes) for a step in each axis of the array. The location in memory can be computed using the dot-product,</p>
-<p><span id="eq:strides" style="display: inline-block; position: relative; width: 100%"><span class="math display">\[{\rm location} = {\rm stride} \cdot {\rm index} + {\rm offset}.\]</span><span style="position: absolute; right: 0em; top: 50%; line-height:0; text-align: right">(1)</span></span> </p>
+<p><span id="eq:strides" style="display: inline-block; position: relative; width: 100%"><span class="math display">\[{\rm location} = {\rm stride} \cdot {\rm index} + {\rm offset}.\]</span><span style="position: absolute; right: 0em; top: 50%; line-height:0; text-align: right">(5)</span></span> </p>
 <h3 id="array-methods">Array methods</h3>
 <p>Given a contiguous array of a given shape, we can compute the stride by taking the cumulative product.</p>
 <p><em>«array-methods»=</em></p>
 <div class="sourceCode" id="array-methods"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="array-methods-1" title="1"><span class="ot">fromShape ::</span> <span class="dt">Shape</span> <span class="ot">-&gt;</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">Stride</span></a>
-<a class="sourceLine" id="array-methods-2" title="2">fromShape [] _ <span class="fu">=</span> []</a>
-<a class="sourceLine" id="array-methods-3" title="3">fromShape (x<span class="fu">:</span>xs) n <span class="fu">=</span> n <span class="fu">:</span> fromShape xs (n <span class="fu">*</span> x)</a></code></pre></div>
+<a class="sourceLine" id="array-methods-2" title="2">fromShape [] _ <span class="ot">=</span> []</a>
+<a class="sourceLine" id="array-methods-3" title="3">fromShape (x<span class="op">:</span>xs) n <span class="ot">=</span> n <span class="op">:</span> fromShape xs (n <span class="op">*</span> x)</a></code></pre></div>
 <h4 id="properties">Properties</h4>
 <p>Basic properties of an array: size, dimension and if the array is contiguous.</p>
 <p><em>«array-methods»=+</em></p>
 <div class="sourceCode" id="array-methods"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="array-methods-1" title="1"><span class="ot">ndim ::</span> <span class="dt">Array</span> a <span class="ot">-&gt;</span> <span class="dt">Int</span></a>
-<a class="sourceLine" id="array-methods-2" title="2">ndim <span class="fu">=</span> <span class="fu">length</span> <span class="fu">.</span> shape</a>
+<a class="sourceLine" id="array-methods-2" title="2">ndim <span class="ot">=</span> <span class="fu">length</span> <span class="op">.</span> shape</a>
 <a class="sourceLine" id="array-methods-3" title="3"></a>
 <a class="sourceLine" id="array-methods-4" title="4"><span class="ot">contiguous ::</span> <span class="dt">Array</span> a <span class="ot">-&gt;</span> <span class="dt">Bool</span></a>
-<a class="sourceLine" id="array-methods-5" title="5">contiguous <span class="dt">Array</span>{shape,stride} <span class="fu">=</span> stride <span class="fu">==</span> fromShape shape <span class="dv">1</span></a></code></pre></div>
+<a class="sourceLine" id="array-methods-5" title="5">contiguous <span class="dt">Array</span>{shape,stride} <span class="ot">=</span> stride <span class="op">==</span> fromShape shape <span class="dv">1</span></a></code></pre></div>
 <h4 id="error-handling">Error handling</h4>
 <p>Methods that can fail will return a type <code>Either Text a</code>. Since that type implements the <code>MonadError</code> class we can throw errors using <code>throwError</code> and at success <code>return</code> a value. We can generalize this pattern by accepting just any <code>MonadError Text</code> type.</p>
 <p><em>«array-methods»=+</em></p>
 <div class="sourceCode" id="array-methods"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="array-methods-1" title="1"><span class="ot">rcheck ::</span> <span class="dt">MonadError</span> <span class="dt">Text</span> m <span class="ot">=&gt;</span> <span class="dt">Text</span> <span class="ot">-&gt;</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> m ()</a>
 <a class="sourceLine" id="array-methods-2" title="2">rcheck what n i</a>
-<a class="sourceLine" id="array-methods-3" title="3">    <span class="fu">|</span> (i <span class="fu">&gt;=</span> <span class="dv">0</span>) <span class="fu">&amp;&amp;</span> (i <span class="fu">&lt;</span> n) <span class="fu">=</span> <span class="fu">return</span> ()</a>
-<a class="sourceLine" id="array-methods-4" title="4">    <span class="fu">|</span> <span class="fu">otherwise</span> <span class="fu">=</span> throwError <span class="fu">$</span> <span class="st">&quot;Range check error: &quot;</span> <span class="fu">&lt;&gt;</span> what <span class="fu">&lt;&gt;</span> <span class="st">&quot; &quot;</span></a>
-<a class="sourceLine" id="array-methods-5" title="5">                      <span class="fu">&lt;&gt;</span> tshow n <span class="fu">&lt;&gt;</span> <span class="st">&quot; &quot;</span> <span class="fu">&lt;&gt;</span> tshow i</a></code></pre></div>
+<a class="sourceLine" id="array-methods-3" title="3">    <span class="op">|</span> (i <span class="op">&gt;=</span> <span class="dv">0</span>) <span class="op">&amp;&amp;</span> (i <span class="op">&lt;</span> n) <span class="ot">=</span> <span class="fu">return</span> ()</a>
+<a class="sourceLine" id="array-methods-4" title="4">    <span class="op">|</span> <span class="fu">otherwise</span> <span class="ot">=</span> throwError <span class="op">$</span> <span class="st">&quot;Range check error: &quot;</span> <span class="op">&lt;&gt;</span> what <span class="op">&lt;&gt;</span> <span class="st">&quot; &quot;</span></a>
+<a class="sourceLine" id="array-methods-5" title="5">                      <span class="op">&lt;&gt;</span> tshow n <span class="op">&lt;&gt;</span> <span class="st">&quot; &quot;</span> <span class="op">&lt;&gt;</span> tshow i</a></code></pre></div>
 <p>The <code>rcheck</code> function implements a range-check on the range <code>0 .. (n-1)</code>.</p>
 <h4 id="reshaping-slicing">Reshaping, slicing</h4>
 <p>If we have an array of complex values, we want to read out the real and imaginary parts.</p>
 <p><em>«array-methods»=+</em></p>
 <div class="sourceCode" id="array-methods"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="array-methods-1" title="1"><span class="ot">realPart ::</span> <span class="dt">Array</span> (<span class="dt">Complex</span> a) <span class="ot">-&gt;</span> <span class="dt">Array</span> a</a>
-<a class="sourceLine" id="array-methods-2" title="2">realPart array<span class="fu">@</span><span class="dt">Array</span>{stride} <span class="fu">=</span> array</a>
-<a class="sourceLine" id="array-methods-3" title="3">    { stride <span class="fu">=</span> <span class="fu">map</span> (<span class="fu">*</span> <span class="dv">2</span>) stride }</a>
+<a class="sourceLine" id="array-methods-2" title="2">realPart array<span class="op">@</span><span class="dt">Array</span>{stride} <span class="ot">=</span> array</a>
+<a class="sourceLine" id="array-methods-3" title="3">    { stride <span class="ot">=</span> <span class="fu">map</span> (<span class="op">*</span> <span class="dv">2</span>) stride }</a>
 <a class="sourceLine" id="array-methods-4" title="4"></a>
 <a class="sourceLine" id="array-methods-5" title="5"><span class="ot">imagPart ::</span> <span class="dt">Array</span> (<span class="dt">Complex</span> a) <span class="ot">-&gt;</span> <span class="dt">Array</span> a</a>
-<a class="sourceLine" id="array-methods-6" title="6">imagPart array<span class="fu">@</span><span class="dt">Array</span>{stride, offset} <span class="fu">=</span> array</a>
-<a class="sourceLine" id="array-methods-7" title="7">    { stride <span class="fu">=</span> <span class="fu">map</span> (<span class="fu">*</span> <span class="dv">2</span>) stride</a>
-<a class="sourceLine" id="array-methods-8" title="8">    , offset <span class="fu">=</span> offset <span class="fu">+</span> <span class="dv">1</span> }</a></code></pre></div>
+<a class="sourceLine" id="array-methods-6" title="6">imagPart array<span class="op">@</span><span class="dt">Array</span>{stride, offset} <span class="ot">=</span> array</a>
+<a class="sourceLine" id="array-methods-7" title="7">    { stride <span class="ot">=</span> <span class="fu">map</span> (<span class="op">*</span> <span class="dv">2</span>) stride</a>
+<a class="sourceLine" id="array-methods-8" title="8">    , offset <span class="ot">=</span> offset <span class="op">+</span> <span class="dv">1</span> }</a></code></pre></div>
 <p>Transposing an array means reversing the shape and stride vectors</p>
 <p><em>«array-methods»=+</em></p>
 <div class="sourceCode" id="array-methods"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="array-methods-1" title="1"><span class="ot">transpose ::</span> <span class="dt">Array</span> a <span class="ot">-&gt;</span> <span class="dt">Array</span> a</a>
-<a class="sourceLine" id="array-methods-2" title="2">transpose array<span class="fu">@</span><span class="dt">Array</span>{shape, stride} <span class="fu">=</span> array</a>
-<a class="sourceLine" id="array-methods-3" title="3">    { shape <span class="fu">=</span> <span class="fu">reverse</span> shape</a>
-<a class="sourceLine" id="array-methods-4" title="4">    , stride <span class="fu">=</span> <span class="fu">reverse</span> stride }</a></code></pre></div>
+<a class="sourceLine" id="array-methods-2" title="2">transpose array<span class="op">@</span><span class="dt">Array</span>{shape, stride} <span class="ot">=</span> array</a>
+<a class="sourceLine" id="array-methods-3" title="3">    { shape <span class="ot">=</span> <span class="fu">reverse</span> shape</a>
+<a class="sourceLine" id="array-methods-4" title="4">    , stride <span class="ot">=</span> <span class="fu">reverse</span> stride }</a></code></pre></div>
 <p>Reshaping is only possible from a contiguous array. Otherwise the arithmetic of stepping through the resulting array would no longer be expressible in terms of a stride and offset.</p>
 <p><em>«array-methods»=+</em></p>
-<div class="sourceCode" id="array-methods"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="array-methods-1" title="1"><span class="ot">reshape ::</span> <span class="dt">Array</span> a <span class="ot">-&gt;</span> <span class="dt">Shape</span> <span class="ot">-&gt;</span> <span class="dt">Either</span> <span class="dt">Text</span> (<span class="dt">Array</span> a)</a>
-<a class="sourceLine" id="array-methods-2" title="2">reshape array<span class="fu">@</span><span class="dt">Array</span>{shape,stride} newShape</a>
-<a class="sourceLine" id="array-methods-3" title="3">    <span class="fu">|</span> contiguous array <span class="fu">=</span> <span class="fu">return</span> <span class="fu">$</span> array</a>
-<a class="sourceLine" id="array-methods-4" title="4">        { shape <span class="fu">=</span> newShape</a>
-<a class="sourceLine" id="array-methods-5" title="5">        , stride <span class="fu">=</span> fromShape newShape <span class="dv">1</span> }</a>
-<a class="sourceLine" id="array-methods-6" title="6">    <span class="fu">|</span> <span class="fu">otherwise</span> <span class="fu">=</span> throwError <span class="st">&quot;Cannot reshape non-contiguous array.&quot;</span></a></code></pre></div>
+<div class="sourceCode" id="array-methods"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="array-methods-1" title="1"><span class="ot">reshape ::</span> <span class="dt">MonadError</span> <span class="dt">Text</span> m <span class="ot">=&gt;</span> <span class="dt">Shape</span> <span class="ot">-&gt;</span> <span class="dt">Array</span> a <span class="ot">-&gt;</span> m (<span class="dt">Array</span> a)</a>
+<a class="sourceLine" id="array-methods-2" title="2">reshape newShape array</a>
+<a class="sourceLine" id="array-methods-3" title="3">    <span class="op">|</span> contiguous array <span class="ot">=</span> <span class="fu">return</span> <span class="op">$</span> array</a>
+<a class="sourceLine" id="array-methods-4" title="4">        { shape <span class="ot">=</span> newShape</a>
+<a class="sourceLine" id="array-methods-5" title="5">        , stride <span class="ot">=</span> fromShape newShape <span class="dv">1</span> }</a>
+<a class="sourceLine" id="array-methods-6" title="6">    <span class="op">|</span> <span class="fu">otherwise</span> <span class="ot">=</span> throwError <span class="st">&quot;Cannot reshape non-contiguous array.&quot;</span></a></code></pre></div>
 <p>The <code>select</code>, <code>extrude</code>, and <code>slice</code> methods do the same as the Numpy array slice notation.</p>
 <table>
 <thead>
@@ -234,31 +257,31 @@ code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warni
 </tbody>
 </table>
 <p><em>«array-methods»=+</em></p>
-<div class="sourceCode" id="array-methods"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="array-methods-1" title="1"><span class="ot">select ::</span> <span class="dt">Array</span> a <span class="ot">-&gt;</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">Either</span> <span class="dt">Text</span> (<span class="dt">Array</span> a)</a>
-<a class="sourceLine" id="array-methods-2" title="2">select array<span class="fu">@</span><span class="dt">Array</span>{shape,stride,offset} dim i <span class="fu">=</span> <span class="kw">do</span></a>
+<div class="sourceCode" id="array-methods"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="array-methods-1" title="1"><span class="ot">select ::</span> <span class="dt">MonadError</span> <span class="dt">Text</span> m <span class="ot">=&gt;</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">Array</span> a <span class="ot">-&gt;</span> m (<span class="dt">Array</span> a)</a>
+<a class="sourceLine" id="array-methods-2" title="2">select dim i array<span class="op">@</span><span class="dt">Array</span>{shape,stride,offset} <span class="ot">=</span> <span class="kw">do</span></a>
 <a class="sourceLine" id="array-methods-3" title="3">    rcheck <span class="st">&quot;dim&quot;</span> (ndim array) dim</a>
-<a class="sourceLine" id="array-methods-4" title="4">    rcheck <span class="st">&quot;size&quot;</span> (shape <span class="fu">!!</span> dim) i</a>
-<a class="sourceLine" id="array-methods-5" title="5">    <span class="fu">return</span> <span class="fu">$</span> array</a>
-<a class="sourceLine" id="array-methods-6" title="6">        { shape  <span class="fu">=</span> remove shape dim</a>
-<a class="sourceLine" id="array-methods-7" title="7">        , stride <span class="fu">=</span> remove stride dim</a>
-<a class="sourceLine" id="array-methods-8" title="8">        , offset <span class="fu">=</span> offset <span class="fu">+</span> (stride <span class="fu">!!</span> dim) <span class="fu">*</span> i }</a>
+<a class="sourceLine" id="array-methods-4" title="4">    rcheck <span class="st">&quot;size&quot;</span> (shape <span class="op">!!</span> dim) i</a>
+<a class="sourceLine" id="array-methods-5" title="5">    <span class="fu">return</span> <span class="op">$</span> array</a>
+<a class="sourceLine" id="array-methods-6" title="6">        { shape  <span class="ot">=</span> remove shape dim</a>
+<a class="sourceLine" id="array-methods-7" title="7">        , stride <span class="ot">=</span> remove stride dim</a>
+<a class="sourceLine" id="array-methods-8" title="8">        , offset <span class="ot">=</span> offset <span class="op">+</span> (stride <span class="op">!!</span> dim) <span class="op">*</span> i }</a>
 <a class="sourceLine" id="array-methods-9" title="9"></a>
-<a class="sourceLine" id="array-methods-10" title="10"><span class="ot">extrude ::</span> <span class="dt">Array</span> a <span class="ot">-&gt;</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">Either</span> <span class="dt">Text</span> (<span class="dt">Array</span> a)</a>
-<a class="sourceLine" id="array-methods-11" title="11">extrude array<span class="fu">@</span><span class="dt">Array</span>{shape,stride} dim <span class="fu">=</span> <span class="kw">do</span></a>
-<a class="sourceLine" id="array-methods-12" title="12">    rcheck <span class="st">&quot;dim&quot;</span> (ndim array <span class="fu">+</span> <span class="dv">1</span>) dim</a>
-<a class="sourceLine" id="array-methods-13" title="13">    <span class="fu">return</span> <span class="fu">$</span> array</a>
-<a class="sourceLine" id="array-methods-14" title="14">        { shape  <span class="fu">=</span> insert shape dim <span class="dv">1</span></a>
-<a class="sourceLine" id="array-methods-15" title="15">        , stride <span class="fu">=</span> insert stride dim ((stride <span class="fu">!!</span> dim) <span class="fu">*</span> (shape <span class="fu">!!</span> dim)) }</a>
+<a class="sourceLine" id="array-methods-10" title="10"><span class="ot">extrude ::</span> <span class="dt">MonadError</span> <span class="dt">Text</span> m <span class="ot">=&gt;</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">Array</span> a <span class="ot">-&gt;</span> m (<span class="dt">Array</span> a)</a>
+<a class="sourceLine" id="array-methods-11" title="11">extrude dim array<span class="op">@</span><span class="dt">Array</span>{shape,stride} <span class="ot">=</span> <span class="kw">do</span></a>
+<a class="sourceLine" id="array-methods-12" title="12">    rcheck <span class="st">&quot;dim&quot;</span> (ndim array <span class="op">+</span> <span class="dv">1</span>) dim</a>
+<a class="sourceLine" id="array-methods-13" title="13">    <span class="fu">return</span> <span class="op">$</span> array</a>
+<a class="sourceLine" id="array-methods-14" title="14">        { shape  <span class="ot">=</span> insert shape dim <span class="dv">1</span></a>
+<a class="sourceLine" id="array-methods-15" title="15">        , stride <span class="ot">=</span> insert stride dim ((stride <span class="op">!!</span> dim) <span class="op">*</span> (shape <span class="op">!!</span> dim)) }</a>
 <a class="sourceLine" id="array-methods-16" title="16"></a>
-<a class="sourceLine" id="array-methods-17" title="17"><span class="ot">slice ::</span> <span class="dt">Array</span> a <span class="ot">-&gt;</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">Either</span> <span class="dt">Text</span> (<span class="dt">Array</span> a)</a>
-<a class="sourceLine" id="array-methods-18" title="18">slice array<span class="fu">@</span><span class="dt">Array</span>{shape,stride,offset} dim a b step <span class="fu">=</span> <span class="kw">do</span></a>
+<a class="sourceLine" id="array-methods-17" title="17"><span class="ot">slice ::</span> <span class="dt">MonadError</span> <span class="dt">Text</span> m <span class="ot">=&gt;</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">Array</span> a <span class="ot">-&gt;</span> m (<span class="dt">Array</span> a)</a>
+<a class="sourceLine" id="array-methods-18" title="18">slice dim a b step array<span class="op">@</span><span class="dt">Array</span>{shape,stride,offset} <span class="ot">=</span> <span class="kw">do</span></a>
 <a class="sourceLine" id="array-methods-19" title="19">    rcheck <span class="st">&quot;dim&quot;</span> (ndim array) dim</a>
-<a class="sourceLine" id="array-methods-20" title="20">    rcheck <span class="st">&quot;a&quot;</span> ((shape <span class="fu">!!</span> dim) <span class="fu">+</span> <span class="dv">1</span>) a</a>
-<a class="sourceLine" id="array-methods-21" title="21">    rcheck <span class="st">&quot;b&quot;</span> ((shape <span class="fu">!!</span> dim) <span class="fu">+</span> <span class="dv">1</span>) b</a>
-<a class="sourceLine" id="array-methods-22" title="22">    <span class="fu">return</span> <span class="fu">$</span> array</a>
-<a class="sourceLine" id="array-methods-23" title="23">        { shape  <span class="fu">=</span> replace shape  dim ((b <span class="fu">-</span> a) <span class="ot">`quot`</span> step)</a>
-<a class="sourceLine" id="array-methods-24" title="24">        , stride <span class="fu">=</span> replace stride dim ((stride <span class="fu">!!</span> dim) <span class="fu">*</span> step)</a>
-<a class="sourceLine" id="array-methods-25" title="25">        , offset <span class="fu">=</span> offset <span class="fu">+</span> (stride <span class="fu">!!</span> dim) <span class="fu">*</span> a }</a></code></pre></div>
+<a class="sourceLine" id="array-methods-20" title="20">    rcheck <span class="st">&quot;a&quot;</span> ((shape <span class="op">!!</span> dim) <span class="op">+</span> <span class="dv">1</span>) a</a>
+<a class="sourceLine" id="array-methods-21" title="21">    rcheck <span class="st">&quot;b&quot;</span> ((shape <span class="op">!!</span> dim) <span class="op">+</span> <span class="dv">1</span>) b</a>
+<a class="sourceLine" id="array-methods-22" title="22">    <span class="fu">return</span> <span class="op">$</span> array</a>
+<a class="sourceLine" id="array-methods-23" title="23">        { shape  <span class="ot">=</span> replace shape  dim ((b <span class="op">-</span> a) <span class="ot">`quot`</span> step)</a>
+<a class="sourceLine" id="array-methods-24" title="24">        , stride <span class="ot">=</span> replace stride dim ((stride <span class="op">!!</span> dim) <span class="op">*</span> step)</a>
+<a class="sourceLine" id="array-methods-25" title="25">        , offset <span class="ot">=</span> offset <span class="op">+</span> (stride <span class="op">!!</span> dim) <span class="op">*</span> a }</a></code></pre></div>
 <h2 id="codelets">Codelets</h2>
 <p>A codelet, for the moment, is just some function that we can call.</p>
 <p><em>file: «src/Codelet.hs»=</em></p>
@@ -270,12 +293,12 @@ code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warni
 <a class="sourceLine" id="cb2-6" title="6"><span class="kw">import</span> <span class="dt">Lib</span></a>
 <a class="sourceLine" id="cb2-7" title="7"><span class="kw">import</span> <span class="dt">AST</span></a>
 <a class="sourceLine" id="cb2-8" title="8"></a>
-<a class="sourceLine" id="cb2-9" title="9"><span class="kw">data</span> <span class="dt">Codelet</span> <span class="fu">=</span> <span class="dt">Codelet</span></a>
+<a class="sourceLine" id="cb2-9" title="9"><span class="kw">data</span> <span class="dt">Codelet</span> <span class="ot">=</span> <span class="dt">Codelet</span></a>
 <a class="sourceLine" id="cb2-10" title="10">    {<span class="ot"> prefix  ::</span> <span class="dt">Text</span></a>
 <a class="sourceLine" id="cb2-11" title="11">    ,<span class="ot"> radix   ::</span> <span class="dt">Int</span> }</a>
 <a class="sourceLine" id="cb2-12" title="12"></a>
 <a class="sourceLine" id="cb2-13" title="13"><span class="ot">codeletName ::</span> <span class="dt">Codelet</span> <span class="ot">-&gt;</span> <span class="dt">Text</span></a>
-<a class="sourceLine" id="cb2-14" title="14">codeletName c <span class="fu">=</span> prefix c <span class="fu">&lt;&gt;</span> <span class="st">&quot;_&quot;</span> <span class="fu">&lt;&gt;</span> tshow (radix c)</a></code></pre></div>
+<a class="sourceLine" id="cb2-14" title="14">codeletName c <span class="ot">=</span> prefix c <span class="op">&lt;&gt;</span> <span class="st">&quot;_&quot;</span> <span class="op">&lt;&gt;</span> tshow (radix c)</a></code></pre></div>
 <h2 id="twiddle-factors">Twiddle factors</h2>
 <p>In Python we created an array of twiddle factors:</p>
 <div class="sourceCode" id="cb3"><pre class="sourceCode python"><code class="sourceCode python"><a class="sourceLine" id="cb3-1" title="1"><span class="kw">def</span> w(k, n):</a>
@@ -296,176 +319,450 @@ code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warni
 <a class="sourceLine" id="cb4-7" title="7"></a>
 <a class="sourceLine" id="cb4-8" title="8"><span class="kw">import</span> <span class="dt">Array</span></a>
 <a class="sourceLine" id="cb4-9" title="9"></a>
-<a class="sourceLine" id="cb4-10" title="10"><span class="fu">&lt;&lt;</span>twiddle<span class="fu">-</span>factors<span class="fu">-</span>w<span class="fu">&gt;&gt;</span></a>
-<a class="sourceLine" id="cb4-11" title="11"><span class="fu">&lt;&lt;</span>twiddle<span class="fu">-</span>factors<span class="fu">-</span>multi<span class="fu">-</span>w<span class="fu">&gt;&gt;</span></a>
-<a class="sourceLine" id="cb4-12" title="12"><span class="fu">&lt;&lt;</span>twiddle<span class="fu">-</span>factors<span class="fu">-</span>make<span class="fu">&gt;&gt;</span></a></code></pre></div>
+<a class="sourceLine" id="cb4-10" title="10"><span class="op">&lt;&lt;</span>twiddle<span class="op">-</span>factors<span class="op">-</span>w<span class="op">&gt;&gt;</span></a>
+<a class="sourceLine" id="cb4-11" title="11"><span class="op">&lt;&lt;</span>twiddle<span class="op">-</span>factors<span class="op">-</span>multi<span class="op">-</span>w<span class="op">&gt;&gt;</span></a>
+<a class="sourceLine" id="cb4-12" title="12"><span class="op">&lt;&lt;</span>twiddle<span class="op">-</span>factors<span class="op">-</span>make<span class="op">&gt;&gt;</span></a></code></pre></div>
 <p>We still have the equation</p>
 <p><span class="math display">\[w_n^k = \exp \left[2 \pi i \frac{k}{n}\right].\]</span></p>
 <p>Haskell provides the function <code>cis</code> which computes a complex point on the unit circle given the phase.</p>
 <p><em>«twiddle-factors-w»=</em></p>
 <div class="sourceCode" id="twiddle-factors-w"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="twiddle-factors-w-1" title="1"><span class="ot">w ::</span> <span class="dt">RealFloat</span> a <span class="ot">=&gt;</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">Complex</span> a</a>
-<a class="sourceLine" id="twiddle-factors-w-2" title="2">w n k <span class="fu">=</span> cis (<span class="dv">2</span> <span class="fu">*</span> <span class="fu">pi</span> <span class="fu">*</span> <span class="fu">fromIntegral</span> k <span class="fu">/</span> <span class="fu">fromIntegral</span> n)</a></code></pre></div>
+<a class="sourceLine" id="twiddle-factors-w-2" title="2">w n k <span class="ot">=</span> cis (<span class="dv">2</span> <span class="op">*</span> <span class="fu">pi</span> <span class="op">*</span> <span class="fu">fromIntegral</span> k <span class="op">/</span> <span class="fu">fromIntegral</span> n)</a></code></pre></div>
 <p>We need to map the index vector to a value <span class="math inline">\(w_{\prod n_i}^{\prod k_i}\)</span>.</p>
 <p><em>«twiddle-factors-multi-w»=</em></p>
 <div class="sourceCode" id="twiddle-factors-multi-w"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="twiddle-factors-multi-w-1" title="1"><span class="ot">multiW ::</span> <span class="dt">RealFloat</span> a <span class="ot">=&gt;</span> <span class="dt">Shape</span> <span class="ot">-&gt;</span> [<span class="dt">Int</span>] <span class="ot">-&gt;</span> <span class="dt">Complex</span> a</a>
-<a class="sourceLine" id="twiddle-factors-multi-w-2" title="2">multiW n k <span class="fu">=</span> w (<span class="fu">product</span> n) (<span class="fu">product</span> k)</a></code></pre></div>
+<a class="sourceLine" id="twiddle-factors-multi-w-2" title="2">multiW n k <span class="ot">=</span> w (<span class="fu">product</span> n) (<span class="fu">product</span> k)</a></code></pre></div>
 <p>To generate the list of indices (lists are lazy, so this should be efficient enough), we have a nifty one-liner. Given a list of indices for a reduced shape vector we can create the full list by prepending numbers from the range <code>[0 .. n-1]</code>.</p>
 <p><em>«twiddle-factors-make»=</em></p>
 <div class="sourceCode" id="twiddle-factors-make"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="twiddle-factors-make-1" title="1"><span class="ot">indices ::</span> <span class="dt">Shape</span> <span class="ot">-&gt;</span> [[<span class="dt">Int</span>]]</a>
-<a class="sourceLine" id="twiddle-factors-make-2" title="2">indices <span class="fu">=</span> <span class="fu">foldr</span> (\ n <span class="ot">-&gt;</span> <span class="fu">concatMap</span> (\ idcs <span class="ot">-&gt;</span> <span class="fu">map</span> (<span class="fu">:</span> idcs) [<span class="dv">0</span> <span class="fu">..</span> n<span class="fu">-</span><span class="dv">1</span>])) [[]]</a>
+<a class="sourceLine" id="twiddle-factors-make-2" title="2">indices <span class="ot">=</span> <span class="fu">foldr</span> (\ n <span class="ot">-&gt;</span> <span class="fu">concatMap</span> (\ idcs <span class="ot">-&gt;</span> <span class="fu">map</span> (<span class="op">:</span> idcs) [<span class="dv">0</span> <span class="op">..</span> n<span class="op">-</span><span class="dv">1</span>])) [[]]</a>
 <a class="sourceLine" id="twiddle-factors-make-3" title="3"></a>
 <a class="sourceLine" id="twiddle-factors-make-4" title="4"><span class="ot">makeTwiddle ::</span> <span class="dt">Shape</span> <span class="ot">-&gt;</span> <span class="dt">Vector</span> (<span class="dt">Complex</span> <span class="dt">Double</span>)</a>
-<a class="sourceLine" id="twiddle-factors-make-5" title="5">makeTwiddle shape <span class="fu">=</span> V.fromList <span class="fu">$</span> <span class="fu">map</span> (multiW shape) <span class="fu">$</span> indices shape</a></code></pre></div>
+<a class="sourceLine" id="twiddle-factors-make-5" title="5">makeTwiddle shape <span class="ot">=</span> V.fromList <span class="op">$</span> <span class="fu">map</span> (multiW shape) <span class="op">$</span> indices shape</a></code></pre></div>
 <h3 id="unit-tests">Unit tests</h3>
 <p><em>«test-predicates»=</em></p>
 <div class="sourceCode" id="test-predicates"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="test-predicates-1" title="1"><span class="kw">class</span> <span class="dt">Approx</span> a <span class="kw">where</span></a>
 <a class="sourceLine" id="test-predicates-2" title="2"><span class="ot">    closeTo ::</span> a <span class="ot">-&gt;</span> a <span class="ot">-&gt;</span> <span class="dt">Bool</span></a>
 <a class="sourceLine" id="test-predicates-3" title="3"></a>
 <a class="sourceLine" id="test-predicates-4" title="4"><span class="kw">instance</span> <span class="dt">Approx</span> <span class="dt">Float</span> <span class="kw">where</span></a>
-<a class="sourceLine" id="test-predicates-5" title="5">    closeTo a b <span class="fu">=</span> <span class="fu">abs</span> (a <span class="fu">-</span> b) <span class="fu">&lt;</span> <span class="fl">1e-5</span></a>
+<a class="sourceLine" id="test-predicates-5" title="5">    closeTo a b <span class="ot">=</span> <span class="fu">abs</span> (a <span class="op">-</span> b) <span class="op">&lt;</span> <span class="fl">1e-5</span></a>
 <a class="sourceLine" id="test-predicates-6" title="6"></a>
 <a class="sourceLine" id="test-predicates-7" title="7"><span class="kw">instance</span> <span class="dt">Approx</span> <span class="dt">Double</span> <span class="kw">where</span></a>
-<a class="sourceLine" id="test-predicates-8" title="8">    closeTo a b <span class="fu">=</span> <span class="fu">abs</span> (a <span class="fu">-</span> b) <span class="fu">&lt;</span> <span class="fl">1e-10</span></a>
+<a class="sourceLine" id="test-predicates-8" title="8">    closeTo a b <span class="ot">=</span> <span class="fu">abs</span> (a <span class="op">-</span> b) <span class="op">&lt;</span> <span class="fl">1e-10</span></a>
 <a class="sourceLine" id="test-predicates-9" title="9"></a>
 <a class="sourceLine" id="test-predicates-10" title="10"><span class="kw">instance</span> (<span class="dt">Approx</span> a, <span class="dt">Applicative</span> m, <span class="dt">Foldable</span> m) <span class="ot">=&gt;</span> <span class="dt">Approx</span> (m a) <span class="kw">where</span></a>
-<a class="sourceLine" id="test-predicates-11" title="11">    closeTo x y <span class="fu">=</span> <span class="fu">and</span> <span class="fu">$</span> liftA2 closeTo x y</a>
+<a class="sourceLine" id="test-predicates-11" title="11">    closeTo x y <span class="ot">=</span> <span class="fu">and</span> <span class="op">$</span> liftA2 closeTo x y</a>
 <a class="sourceLine" id="test-predicates-12" title="12"></a>
 <a class="sourceLine" id="test-predicates-13" title="13"><span class="kw">instance</span> <span class="ot">{-# OVERLAPPING #-}</span> (<span class="dt">Approx</span> a, <span class="dt">V.Unbox</span> a) <span class="ot">=&gt;</span> <span class="dt">Approx</span> (<span class="dt">Vector</span> a) <span class="kw">where</span></a>
-<a class="sourceLine" id="test-predicates-14" title="14">    closeTo x y <span class="fu">=</span> V.and <span class="fu">$</span> V.zipWith closeTo x y</a></code></pre></div>
+<a class="sourceLine" id="test-predicates-14" title="14">    closeTo x y <span class="ot">=</span> V.and <span class="op">$</span> V.zipWith closeTo x y</a></code></pre></div>
 <p><em>«test-twiddle-factors»=</em></p>
-<div class="sourceCode" id="test-twiddle-factors"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="test-twiddle-factors-1" title="1">describe <span class="st">&quot;TwiddleFactors.indices&quot;</span> <span class="fu">$</span> <span class="kw">do</span></a>
-<a class="sourceLine" id="test-twiddle-factors-2" title="2">    it <span class="st">&quot;creates an index list&quot;</span> <span class="fu">$</span> <span class="kw">do</span></a>
+<div class="sourceCode" id="test-twiddle-factors"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="test-twiddle-factors-1" title="1">describe <span class="st">&quot;TwiddleFactors.indices&quot;</span> <span class="op">$</span></a>
+<a class="sourceLine" id="test-twiddle-factors-2" title="2">    it <span class="st">&quot;creates an index list&quot;</span> <span class="op">$</span> <span class="kw">do</span></a>
 <a class="sourceLine" id="test-twiddle-factors-3" title="3">        indices [<span class="dv">2</span>, <span class="dv">2</span>] <span class="ot">`shouldBe`</span> [[<span class="dv">0</span>, <span class="dv">0</span>], [<span class="dv">1</span>, <span class="dv">0</span>], [<span class="dv">0</span>, <span class="dv">1</span>], [<span class="dv">1</span>, <span class="dv">1</span>]]</a>
 <a class="sourceLine" id="test-twiddle-factors-4" title="4">        indices [<span class="dv">3</span>, <span class="dv">1</span>] <span class="ot">`shouldBe`</span> [[<span class="dv">0</span>, <span class="dv">0</span>], [<span class="dv">1</span>, <span class="dv">0</span>], [<span class="dv">2</span>, <span class="dv">0</span>]]</a>
 <a class="sourceLine" id="test-twiddle-factors-5" title="5"></a>
-<a class="sourceLine" id="test-twiddle-factors-6" title="6">describe <span class="st">&quot;TwiddleFactors.makeTwiddle&quot;</span> <span class="fu">$</span> <span class="kw">do</span></a>
-<a class="sourceLine" id="test-twiddle-factors-7" title="7">    it <span class="st">&quot;Generates twiddle factors&quot;</span> <span class="fu">$</span> <span class="kw">do</span></a>
+<a class="sourceLine" id="test-twiddle-factors-6" title="6">describe <span class="st">&quot;TwiddleFactors.makeTwiddle&quot;</span> <span class="op">$</span></a>
+<a class="sourceLine" id="test-twiddle-factors-7" title="7">    it <span class="st">&quot;Generates twiddle factors&quot;</span> <span class="op">$</span> <span class="kw">do</span></a>
 <a class="sourceLine" id="test-twiddle-factors-8" title="8">        makeTwiddle [<span class="dv">2</span>, <span class="dv">2</span>] <span class="ot">`shouldSatisfy`</span> closeTo</a>
-<a class="sourceLine" id="test-twiddle-factors-9" title="9">            (V.fromList [ <span class="fl">1.0</span>, <span class="fl">1.0</span>, <span class="fl">1.0</span>, <span class="fl">0.0</span> <span class="fu">:+</span> <span class="fl">1.0</span> ])</a>
+<a class="sourceLine" id="test-twiddle-factors-9" title="9">            (V.fromList [ <span class="fl">1.0</span>, <span class="fl">1.0</span>, <span class="fl">1.0</span>, <span class="fl">0.0</span> <span class="op">:+</span> <span class="fl">1.0</span> ])</a>
 <a class="sourceLine" id="test-twiddle-factors-10" title="10">        makeTwiddle [<span class="dv">4</span>] <span class="ot">`shouldSatisfy`</span> closeTo</a>
-<a class="sourceLine" id="test-twiddle-factors-11" title="11">            (V.fromList [ <span class="fl">1.0</span>, <span class="fl">0.0</span> <span class="fu">:+</span> <span class="fl">1.0</span>, <span class="fu">-</span><span class="fl">1.0</span>, <span class="fl">0.0</span> <span class="fu">:+</span> (<span class="fu">-</span><span class="fl">1.0</span>) ])</a></code></pre></div>
+<a class="sourceLine" id="test-twiddle-factors-11" title="11">            (V.fromList [ <span class="fl">1.0</span>, <span class="fl">0.0</span> <span class="op">:+</span> <span class="fl">1.0</span>, <span class="op">-</span><span class="fl">1.0</span>, <span class="fl">0.0</span> <span class="op">:+</span> (<span class="op">-</span><span class="fl">1.0</span>) ])</a></code></pre></div>
 <h2 id="abstract-syntax-tree">Abstract Syntax Tree</h2>
 <p><em>file: «src/AST.hs»=</em></p>
-<div class="sourceCode" id="cb5"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb5-1" title="1"><span class="ot">{-# LANGUAGE GADTs #-}</span></a>
-<a class="sourceLine" id="cb5-2" title="2"></a>
-<a class="sourceLine" id="cb5-3" title="3"><span class="kw">module</span> <span class="dt">AST</span> <span class="kw">where</span></a>
-<a class="sourceLine" id="cb5-4" title="4"></a>
-<a class="sourceLine" id="cb5-5" title="5"><span class="kw">import</span> <span class="dt">Data.Text</span> (<span class="dt">Text</span>)</a>
-<a class="sourceLine" id="cb5-6" title="6"><span class="kw">import</span> <span class="kw">qualified</span> <span class="dt">Data.Text</span> <span class="kw">as</span> <span class="dt">T</span></a>
+<div class="sourceCode" id="cb5"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb5-1" title="1"><span class="ot">{-# LANGUAGE GADTs,DataKinds,TypeOperators,KindSignatures #-}</span></a>
+<a class="sourceLine" id="cb5-2" title="2"><span class="ot">{-# LANGUAGE DuplicateRecordFields #-}</span></a>
+<a class="sourceLine" id="cb5-3" title="3"><span class="ot">{-# LANGUAGE StandaloneDeriving #-}</span></a>
+<a class="sourceLine" id="cb5-4" title="4"><span class="ot">{-# LANGUAGE FlexibleInstances,UndecidableInstances #-}</span></a>
+<a class="sourceLine" id="cb5-5" title="5"></a>
+<a class="sourceLine" id="cb5-6" title="6"><span class="kw">module</span> <span class="dt">AST</span> <span class="kw">where</span></a>
 <a class="sourceLine" id="cb5-7" title="7"></a>
-<a class="sourceLine" id="cb5-8" title="8"><span class="kw">import</span> <span class="dt">Data.Complex</span></a>
-<a class="sourceLine" id="cb5-9" title="9"><span class="kw">import</span> <span class="dt">Array</span></a>
-<a class="sourceLine" id="cb5-10" title="10"></a>
-<a class="sourceLine" id="cb5-11" title="11"><span class="kw">newtype</span> <span class="dt">Function</span> a b <span class="fu">=</span> <span class="dt">Function</span> <span class="dt">Text</span></a>
-<a class="sourceLine" id="cb5-12" title="12"><span class="kw">newtype</span> <span class="dt">Variable</span> a <span class="fu">=</span> <span class="dt">Variable</span> <span class="dt">Text</span></a>
-<a class="sourceLine" id="cb5-13" title="13"><span class="kw">newtype</span> <span class="dt">Constant</span> a <span class="fu">=</span> <span class="dt">Constant</span> <span class="dt">Text</span></a>
-<a class="sourceLine" id="cb5-14" title="14"></a>
-<a class="sourceLine" id="cb5-15" title="15"><span class="kw">data</span> <span class="dt">Range</span> <span class="fu">=</span> <span class="dt">Range</span></a>
-<a class="sourceLine" id="cb5-16" title="16">    {<span class="ot"> start ::</span> <span class="dt">Int</span></a>
-<a class="sourceLine" id="cb5-17" title="17">    ,<span class="ot"> end   ::</span> <span class="dt">Int</span></a>
-<a class="sourceLine" id="cb5-18" title="18">    ,<span class="ot"> step  ::</span> <span class="dt">Int</span> } <span class="kw">deriving</span> (<span class="dt">Show</span>)</a>
-<a class="sourceLine" id="cb5-19" title="19"></a>
-<a class="sourceLine" id="cb5-20" title="20"><span class="kw">data</span> <span class="dt">Expr</span> a <span class="kw">where</span></a>
-<a class="sourceLine" id="cb5-21" title="21">    <span class="dt">IntegerValue</span><span class="ot">   ::</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">Expr</span> <span class="dt">Int</span></a>
-<a class="sourceLine" id="cb5-22" title="22">    <span class="dt">RealValue</span><span class="ot">      ::</span> <span class="dt">Double</span> <span class="ot">-&gt;</span> <span class="dt">Expr</span> <span class="dt">Double</span></a>
-<a class="sourceLine" id="cb5-23" title="23">    <span class="dt">ComplexValue</span><span class="ot">   ::</span> <span class="dt">Complex</span> <span class="dt">Double</span> <span class="ot">-&gt;</span> <span class="dt">Expr</span> (<span class="dt">Complex</span> <span class="dt">Double</span>)</a>
-<a class="sourceLine" id="cb5-24" title="24">    <span class="dt">VarReference</span><span class="ot">   ::</span> <span class="dt">Variable</span> a <span class="ot">-&gt;</span> <span class="dt">Expr</span> a</a>
-<a class="sourceLine" id="cb5-25" title="25">    <span class="dt">ConstReference</span><span class="ot"> ::</span> <span class="dt">Constant</span> a <span class="ot">-&gt;</span> <span class="dt">Expr</span> a</a>
-<a class="sourceLine" id="cb5-26" title="26">    <span class="dt">ArrayIndex</span><span class="ot">     ::</span> <span class="dt">Array</span> a <span class="ot">-&gt;</span> [<span class="dt">Expr</span> <span class="dt">Int</span>] <span class="ot">-&gt;</span> <span class="dt">Expr</span> a</a>
-<a class="sourceLine" id="cb5-27" title="27">    <span class="dt">FunctionCall</span><span class="ot">   ::</span> <span class="dt">Function</span> a b <span class="ot">-&gt;</span> <span class="dt">Expr</span> b <span class="ot">-&gt;</span> <span class="dt">Expr</span> a</a>
-<a class="sourceLine" id="cb5-28" title="28"></a>
-<a class="sourceLine" id="cb5-29" title="29"><span class="kw">data</span> <span class="dt">Stmt</span> <span class="kw">where</span></a>
-<a class="sourceLine" id="cb5-30" title="30">    <span class="dt">VarDeclaration</span><span class="ot">   ::</span> <span class="dt">Variable</span> a <span class="ot">-&gt;</span> <span class="dt">Stmt</span></a>
-<a class="sourceLine" id="cb5-31" title="31">    <span class="dt">ConstDeclaration</span><span class="ot"> ::</span> <span class="dt">Constant</span> a <span class="ot">-&gt;</span> <span class="dt">Stmt</span></a>
-<a class="sourceLine" id="cb5-32" title="32">    <span class="dt">Expression</span><span class="ot">       ::</span> <span class="dt">Expr</span> () <span class="ot">-&gt;</span> <span class="dt">Stmt</span></a>
-<a class="sourceLine" id="cb5-33" title="33">    <span class="dt">ParallelFor</span><span class="ot">      ::</span> <span class="dt">Variable</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">Range</span> <span class="ot">-&gt;</span> [<span class="dt">Stmt</span>] <span class="ot">-&gt;</span> <span class="dt">Stmt</span></a>
-<a class="sourceLine" id="cb5-34" title="34">    <span class="dt">Assignment</span><span class="ot">       ::</span> <span class="dt">Variable</span> a <span class="ot">-&gt;</span> <span class="dt">Expr</span> a <span class="ot">-&gt;</span> <span class="dt">Stmt</span></a></code></pre></div>
-<h2 id="miscellaneous-functions">Miscellaneous functions</h2>
-<p><em>file: «src/Lib.hs»=</em></p>
-<div class="sourceCode" id="cb6"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb6-1" title="1"><span class="kw">module</span> <span class="dt">Lib</span> <span class="kw">where</span></a>
+<a class="sourceLine" id="cb5-8" title="8"><span class="kw">import</span> <span class="dt">Data.Proxy</span></a>
+<a class="sourceLine" id="cb5-9" title="9"><span class="kw">import</span> <span class="dt">Data.Text</span> (<span class="dt">Text</span>)</a>
+<a class="sourceLine" id="cb5-10" title="10"><span class="kw">import</span> <span class="kw">qualified</span> <span class="dt">Data.Text</span> <span class="kw">as</span> <span class="dt">T</span></a>
+<a class="sourceLine" id="cb5-11" title="11"></a>
+<a class="sourceLine" id="cb5-12" title="12"><span class="co">-- import Data.Complex</span></a>
+<a class="sourceLine" id="cb5-13" title="13"><span class="kw">import</span> <span class="dt">Array</span></a>
+<a class="sourceLine" id="cb5-14" title="14"><span class="kw">import</span> <span class="dt">Lib</span></a>
+<a class="sourceLine" id="cb5-15" title="15"></a>
+<a class="sourceLine" id="cb5-16" title="16"><span class="kw">class</span> (<span class="dt">Show</span> a) <span class="ot">=&gt;</span> <span class="dt">Declarable</span> a <span class="kw">where</span></a>
+<a class="sourceLine" id="cb5-17" title="17"><span class="ot">  typename ::</span> proxy a <span class="ot">-&gt;</span> <span class="dt">Text</span></a>
+<a class="sourceLine" id="cb5-18" title="18"></a>
+<a class="sourceLine" id="cb5-19" title="19"><span class="kw">data</span> <span class="dt">Pointer</span> a <span class="ot">=</span> <span class="dt">Pointer</span> <span class="kw">deriving</span> (<span class="dt">Show</span>)</a>
+<a class="sourceLine" id="cb5-20" title="20"><span class="kw">data</span> <span class="dt">Function</span><span class="ot"> ::</span> [<span class="op">*</span>] <span class="ot">-&gt;</span> <span class="op">*</span> <span class="ot">-&gt;</span> <span class="op">*</span> <span class="kw">where</span></a>
+<a class="sourceLine" id="cb5-21" title="21">  <span class="dt">Function</span><span class="ot"> ::</span> <span class="dt">Text</span> <span class="ot">-&gt;</span> <span class="dt">Function</span> a b</a>
+<a class="sourceLine" id="cb5-22" title="22">  <span class="kw">deriving</span> (<span class="dt">Show</span>)</a>
+<a class="sourceLine" id="cb5-23" title="23"><span class="kw">newtype</span> <span class="dt">Variable</span> a <span class="ot">=</span> <span class="dt">Variable</span> <span class="dt">Text</span> <span class="kw">deriving</span> (<span class="dt">Show</span>)</a>
+<a class="sourceLine" id="cb5-24" title="24"><span class="kw">newtype</span> <span class="dt">Constant</span> a <span class="ot">=</span> <span class="dt">Constant</span> <span class="dt">Text</span> <span class="kw">deriving</span> (<span class="dt">Show</span>)</a>
+<a class="sourceLine" id="cb5-25" title="25"></a>
+<a class="sourceLine" id="cb5-26" title="26"><span class="kw">instance</span> <span class="dt">Declarable</span> <span class="dt">Int</span> <span class="kw">where</span></a>
+<a class="sourceLine" id="cb5-27" title="27">  typename _ <span class="ot">=</span> <span class="st">&quot;int&quot;</span></a>
+<a class="sourceLine" id="cb5-28" title="28"><span class="kw">instance</span> <span class="dt">Declarable</span> <span class="dt">Double</span> <span class="kw">where</span></a>
+<a class="sourceLine" id="cb5-29" title="29">  typename _ <span class="ot">=</span> <span class="st">&quot;R&quot;</span></a>
+<a class="sourceLine" id="cb5-30" title="30"><span class="kw">instance</span> <span class="dt">Declarable</span> a <span class="ot">=&gt;</span> <span class="dt">Declarable</span> (<span class="dt">Pointer</span> a) <span class="kw">where</span></a>
+<a class="sourceLine" id="cb5-31" title="31">  typename _ <span class="ot">=</span> typename (<span class="dt">Proxy</span><span class="ot"> ::</span> <span class="dt">Proxy</span> a) <span class="op">&lt;&gt;</span> <span class="st">&quot;*&quot;</span></a>
+<a class="sourceLine" id="cb5-32" title="32"></a>
+<a class="sourceLine" id="cb5-33" title="33"><span class="kw">data</span> <span class="dt">Range</span> <span class="ot">=</span> <span class="dt">Range</span></a>
+<a class="sourceLine" id="cb5-34" title="34">    {<span class="ot"> start ::</span> <span class="dt">Int</span></a>
+<a class="sourceLine" id="cb5-35" title="35">    ,<span class="ot"> end   ::</span> <span class="dt">Int</span></a>
+<a class="sourceLine" id="cb5-36" title="36">    ,<span class="ot"> step  ::</span> <span class="dt">Int</span> } <span class="kw">deriving</span> (<span class="dt">Show</span>)</a>
+<a class="sourceLine" id="cb5-37" title="37"></a>
+<a class="sourceLine" id="cb5-38" title="38"><span class="kw">data</span> <span class="dt">HList</span><span class="ot"> ::</span> [<span class="op">*</span>] <span class="ot">-&gt;</span> <span class="op">*</span> <span class="kw">where</span></a>
+<a class="sourceLine" id="cb5-39" title="39">    <span class="dt">Nil</span><span class="ot"> ::</span> <span class="dt">HList</span> &#39;[]</a>
+<a class="sourceLine" id="cb5-40" title="40">    <span class="dt">Cons</span><span class="ot"> ::</span> a <span class="ot">-&gt;</span> <span class="dt">HList</span> l <span class="ot">-&gt;</span> <span class="dt">HList</span> (a &#39;<span class="op">:</span> l)</a>
+<a class="sourceLine" id="cb5-41" title="41"></a>
+<a class="sourceLine" id="cb5-42" title="42"><span class="kw">instance</span> <span class="dt">Show</span> (<span class="dt">HList</span> &#39;[]) <span class="kw">where</span></a>
+<a class="sourceLine" id="cb5-43" title="43">    <span class="fu">show</span> <span class="dt">Nil</span> <span class="ot">=</span> <span class="st">&quot;Nil&quot;</span></a>
+<a class="sourceLine" id="cb5-44" title="44"></a>
+<a class="sourceLine" id="cb5-45" title="45"><span class="kw">instance</span> (<span class="dt">Show</span> a, <span class="dt">Show</span> (<span class="dt">HList</span> l)) <span class="ot">=&gt;</span> <span class="dt">Show</span> (<span class="dt">HList</span> (a &#39;<span class="op">:</span> l)) <span class="kw">where</span></a>
+<a class="sourceLine" id="cb5-46" title="46">    <span class="fu">show</span> (<span class="dt">Cons</span> x xs) <span class="ot">=</span> <span class="st">&quot;Cons &quot;</span> <span class="op">++</span> <span class="fu">show</span> x <span class="op">++</span> <span class="st">&quot; (&quot;</span> <span class="op">++</span> <span class="fu">show</span> xs <span class="op">++</span> <span class="st">&quot;)&quot;</span></a>
+<a class="sourceLine" id="cb5-47" title="47">    </a>
+<a class="sourceLine" id="cb5-48" title="48"><span class="kw">data</span> <span class="dt">Expr</span> a <span class="kw">where</span></a>
+<a class="sourceLine" id="cb5-49" title="49">    <span class="dt">Literal</span><span class="ot">        ::</span> (<span class="dt">Show</span> a) <span class="ot">=&gt;</span> a <span class="ot">-&gt;</span> <span class="dt">Expr</span> a</a>
+<a class="sourceLine" id="cb5-50" title="50">    <span class="dt">IntegerValue</span><span class="ot">   ::</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">Expr</span> <span class="dt">Int</span></a>
+<a class="sourceLine" id="cb5-51" title="51">    <span class="dt">RealValue</span><span class="ot">      ::</span> <span class="dt">Double</span> <span class="ot">-&gt;</span> <span class="dt">Expr</span> <span class="dt">Double</span></a>
+<a class="sourceLine" id="cb5-52" title="52">    <span class="co">-- ComplexValue   :: Complex Double -&gt; Expr (Complex Double)</span></a>
+<a class="sourceLine" id="cb5-53" title="53">    <span class="dt">ArrayRef</span><span class="ot">       ::</span> <span class="dt">Array</span> a <span class="ot">-&gt;</span> <span class="dt">Expr</span> (<span class="dt">Array</span> a)</a>
+<a class="sourceLine" id="cb5-54" title="54">    <span class="dt">VarReference</span><span class="ot">   ::</span> <span class="dt">Variable</span> a <span class="ot">-&gt;</span> <span class="dt">Expr</span> a</a>
+<a class="sourceLine" id="cb5-55" title="55">    <span class="dt">ConstReference</span><span class="ot"> ::</span> <span class="dt">Constant</span> a <span class="ot">-&gt;</span> <span class="dt">Expr</span> a</a>
+<a class="sourceLine" id="cb5-56" title="56">    <span class="dt">ArrayIndex</span><span class="ot">     ::</span> <span class="dt">Array</span> a <span class="ot">-&gt;</span> [<span class="dt">Expr</span> <span class="dt">Int</span>] <span class="ot">-&gt;</span> <span class="dt">Expr</span> a</a>
+<a class="sourceLine" id="cb5-57" title="57">    <span class="dt">TUnit</span><span class="ot">          ::</span> <span class="dt">Expr</span> ()</a>
+<a class="sourceLine" id="cb5-58" title="58">    <span class="dt">TNull</span><span class="ot">          ::</span> <span class="dt">Expr</span> (<span class="dt">HList</span> &#39;[])</a>
+<a class="sourceLine" id="cb5-59" title="59"><span class="ot">    (:+:)          ::</span> (<span class="dt">Show</span> a) <span class="ot">=&gt;</span> <span class="dt">Expr</span> a <span class="ot">-&gt;</span> <span class="dt">Expr</span> (<span class="dt">HList</span> b) <span class="ot">-&gt;</span> <span class="dt">Expr</span> (<span class="dt">HList</span> (a &#39;<span class="op">:</span> b))</a>
+<a class="sourceLine" id="cb5-60" title="60">    <span class="dt">Apply</span><span class="ot">          ::</span> <span class="dt">Function</span> a b <span class="ot">-&gt;</span> <span class="dt">Expr</span> (<span class="dt">HList</span> a) <span class="ot">-&gt;</span> <span class="dt">Expr</span> b</a>
+<a class="sourceLine" id="cb5-61" title="61"></a>
+<a class="sourceLine" id="cb5-62" title="62"><span class="kw">infixr</span> <span class="dv">1</span> <span class="op">:+:</span></a>
+<a class="sourceLine" id="cb5-63" title="63"></a>
+<a class="sourceLine" id="cb5-64" title="64"><span class="co">-- deriving instance Show a =&gt; Show (Expr a)</span></a>
+<a class="sourceLine" id="cb5-65" title="65"></a>
+<a class="sourceLine" id="cb5-66" title="66"><span class="kw">data</span> <span class="dt">Stmt</span> <span class="kw">where</span></a>
+<a class="sourceLine" id="cb5-67" title="67">    <span class="dt">VarDeclaration</span><span class="ot">   ::</span> (<span class="dt">Declarable</span> a, <span class="dt">Show</span> a) <span class="ot">=&gt;</span> <span class="dt">Variable</span> a <span class="ot">-&gt;</span> <span class="dt">Stmt</span></a>
+<a class="sourceLine" id="cb5-68" title="68">    <span class="dt">ConstDeclaration</span><span class="ot"> ::</span> (<span class="dt">Declarable</span> a, <span class="dt">Show</span> a) <span class="ot">=&gt;</span> <span class="dt">Constant</span> a <span class="ot">-&gt;</span> <span class="dt">Stmt</span></a>
+<a class="sourceLine" id="cb5-69" title="69">    <span class="dt">Expression</span><span class="ot">       ::</span> <span class="dt">Expr</span> () <span class="ot">-&gt;</span> <span class="dt">Stmt</span></a>
+<a class="sourceLine" id="cb5-70" title="70">    <span class="dt">ParallelFor</span><span class="ot">      ::</span> <span class="dt">Variable</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">Range</span> <span class="ot">-&gt;</span> [<span class="dt">Stmt</span>] <span class="ot">-&gt;</span> <span class="dt">Stmt</span></a>
+<a class="sourceLine" id="cb5-71" title="71">    <span class="dt">Assignment</span><span class="ot">       ::</span> (<span class="dt">Show</span> a) <span class="ot">=&gt;</span> <span class="dt">Variable</span> a <span class="ot">-&gt;</span> <span class="dt">Expr</span> a <span class="ot">-&gt;</span> <span class="dt">Stmt</span></a>
+<a class="sourceLine" id="cb5-72" title="72"></a>
+<a class="sourceLine" id="cb5-73" title="73"><span class="co">-- deriving instance Show Stmt</span></a>
+<a class="sourceLine" id="cb5-74" title="74"></a>
+<a class="sourceLine" id="cb5-75" title="75"><span class="kw">data</span> <span class="dt">FunctionDecl</span> a b <span class="ot">=</span> <span class="dt">FunctionDecl</span></a>
+<a class="sourceLine" id="cb5-76" title="76">  {<span class="ot"> functionName ::</span> <span class="dt">Text</span></a>
+<a class="sourceLine" id="cb5-77" title="77">  ,<span class="ot"> argNames     ::</span> [<span class="dt">Text</span>]</a>
+<a class="sourceLine" id="cb5-78" title="78">  ,<span class="ot"> functionBody ::</span> [<span class="dt">Stmt</span>] }</a>
+<a class="sourceLine" id="cb5-79" title="79"></a>
+<a class="sourceLine" id="cb5-80" title="80"><span class="kw">class</span> <span class="dt">Syntax</span> a <span class="kw">where</span></a>
+<a class="sourceLine" id="cb5-81" title="81"><span class="ot">  generate ::</span> a <span class="ot">-&gt;</span> <span class="dt">Text</span></a>
+<a class="sourceLine" id="cb5-82" title="82"></a>
+<a class="sourceLine" id="cb5-83" title="83"><span class="kw">instance</span> <span class="dt">Syntax</span> (<span class="dt">Expr</span> a) <span class="kw">where</span></a>
+<a class="sourceLine" id="cb5-84" title="84">  generate (<span class="dt">Literal</span> x) <span class="ot">=</span> tshow x</a>
+<a class="sourceLine" id="cb5-85" title="85">  generate (<span class="dt">IntegerValue</span> x) <span class="ot">=</span> tshow x</a>
+<a class="sourceLine" id="cb5-86" title="86">  generate (<span class="dt">RealValue</span> x) <span class="ot">=</span> tshow x</a>
+<a class="sourceLine" id="cb5-87" title="87">  generate (<span class="dt">ArrayRef</span> x) <span class="ot">=</span> name x <span class="op">&lt;&gt;</span> <span class="st">&quot; + &quot;</span> <span class="op">&lt;&gt;</span> tshow (offset x)</a>
+<a class="sourceLine" id="cb5-88" title="88">  generate (<span class="dt">VarReference</span> (<span class="dt">Variable</span> x)) <span class="ot">=</span> x</a>
+<a class="sourceLine" id="cb5-89" title="89">  generate (<span class="dt">ConstReference</span> (<span class="dt">Constant</span> x)) <span class="ot">=</span> x</a>
+<a class="sourceLine" id="cb5-90" title="90">  generate (<span class="dt">ArrayIndex</span> a i) <span class="ot">=</span> name a <span class="op">&lt;&gt;</span> <span class="st">&quot;[&lt;index expression&gt;]&quot;</span></a>
+<a class="sourceLine" id="cb5-91" title="91">  generate (<span class="dt">Apply</span> (<span class="dt">Function</span> f) a) <span class="ot">=</span> f <span class="op">&lt;&gt;</span> <span class="st">&quot;(&quot;</span> <span class="op">&lt;&gt;</span> generate a <span class="op">&lt;&gt;</span> <span class="st">&quot;)&quot;</span></a>
+<a class="sourceLine" id="cb5-92" title="92">  generate (a <span class="op">:+:</span> <span class="dt">TNull</span>) <span class="ot">=</span> generate a</a>
+<a class="sourceLine" id="cb5-93" title="93">  generate (a <span class="op">:+:</span> b) <span class="ot">=</span> generate a <span class="op">&lt;&gt;</span> <span class="st">&quot;, &quot;</span> <span class="op">&lt;&gt;</span> generate b</a>
+<a class="sourceLine" id="cb5-94" title="94">  generate <span class="dt">TNull</span> <span class="ot">=</span> <span class="st">&quot;&quot;</span></a>
+<a class="sourceLine" id="cb5-95" title="95"></a>
+<a class="sourceLine" id="cb5-96" title="96"><span class="kw">instance</span> <span class="dt">Syntax</span> <span class="dt">Stmt</span> <span class="kw">where</span></a>
+<a class="sourceLine" id="cb5-97" title="97">  generate (<span class="dt">VarDeclaration</span> v<span class="op">@</span>(<span class="dt">Variable</span> x)) <span class="ot">=</span> typename v <span class="op">&lt;&gt;</span> <span class="st">&quot; &quot;</span> <span class="op">&lt;&gt;</span> x <span class="op">&lt;&gt;</span> <span class="st">&quot;;&quot;</span></a>
+<a class="sourceLine" id="cb5-98" title="98">  generate (<span class="dt">ConstDeclaration</span> v<span class="op">@</span>(<span class="dt">Constant</span> x)) <span class="ot">=</span> typename v <span class="op">&lt;&gt;</span> <span class="st">&quot; const &quot;</span> <span class="op">&lt;&gt;</span> x <span class="op">&lt;&gt;</span> <span class="st">&quot;;&quot;</span></a>
+<a class="sourceLine" id="cb5-99" title="99">  generate (<span class="dt">Expression</span> e) <span class="ot">=</span> generate e <span class="op">&lt;&gt;</span> <span class="st">&quot;;&quot;</span></a>
+<a class="sourceLine" id="cb5-100" title="100">  generate (<span class="dt">ParallelFor</span> (<span class="dt">Variable</span> v) (<span class="dt">Range</span> a b s) body) <span class="ot">=</span></a>
+<a class="sourceLine" id="cb5-101" title="101">    <span class="st">&quot;for (int &quot;</span> <span class="op">&lt;&gt;</span> v <span class="op">&lt;&gt;</span> <span class="st">&quot;=&quot;</span> <span class="op">&lt;&gt;</span> tshow a <span class="op">&lt;&gt;</span> <span class="st">&quot;;&quot;</span> <span class="op">&lt;&gt;</span> v <span class="op">&lt;&gt;</span> <span class="st">&quot;&lt;&quot;</span></a>
+<a class="sourceLine" id="cb5-102" title="102">    <span class="op">&lt;&gt;</span> tshow b <span class="op">&lt;&gt;</span> <span class="st">&quot;;&quot;</span> <span class="op">&lt;&gt;</span> v <span class="op">&lt;&gt;</span> <span class="st">&quot;+=&quot;</span> <span class="op">&lt;&gt;</span> tshow s <span class="op">&lt;&gt;</span> <span class="st">&quot;) {\n&quot;</span></a>
+<a class="sourceLine" id="cb5-103" title="103">    <span class="op">&lt;&gt;</span> T.unlines (<span class="fu">map</span> generate body) <span class="op">&lt;&gt;</span> <span class="st">&quot;\n}&quot;</span></a>
+<a class="sourceLine" id="cb5-104" title="104">  generate (<span class="dt">Assignment</span> (<span class="dt">Variable</span> v) e) <span class="ot">=</span> v <span class="op">&lt;&gt;</span> <span class="st">&quot; = &quot;</span> <span class="op">&lt;&gt;</span> generate e <span class="op">&lt;&gt;</span> <span class="st">&quot;;&quot;</span></a></code></pre></div>
+<h2 id="calling-genfft">Calling GenFFT</h2>
+<p><em>file: «src/GenFFT.hs»=</em></p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb6-1" title="1"><span class="ot">{-# LANGUAGE RecordWildCards #-}</span></a>
 <a class="sourceLine" id="cb6-2" title="2"></a>
-<a class="sourceLine" id="cb6-3" title="3"><span class="kw">import</span> <span class="dt">Data.Text</span> (<span class="dt">Text</span>)</a>
-<a class="sourceLine" id="cb6-4" title="4"><span class="kw">import</span> <span class="kw">qualified</span> <span class="dt">Data.Text</span> <span class="kw">as</span> <span class="dt">T</span></a>
-<a class="sourceLine" id="cb6-5" title="5"></a>
-<a class="sourceLine" id="cb6-6" title="6"><span class="fu">&lt;&lt;</span>lib<span class="fu">-</span>list<span class="fu">-</span>manipulation<span class="fu">&gt;&gt;</span></a>
-<a class="sourceLine" id="cb6-7" title="7"></a>
-<a class="sourceLine" id="cb6-8" title="8"><span class="ot">tshow ::</span> <span class="dt">Show</span> a <span class="ot">=&gt;</span> a <span class="ot">-&gt;</span> <span class="dt">Text</span></a>
-<a class="sourceLine" id="cb6-9" title="9">tshow <span class="fu">=</span> T.pack <span class="fu">.</span> <span class="fu">show</span></a></code></pre></div>
+<a class="sourceLine" id="cb6-3" title="3"><span class="kw">module</span> <span class="dt">GenFFT</span> <span class="kw">where</span></a>
+<a class="sourceLine" id="cb6-4" title="4"></a>
+<a class="sourceLine" id="cb6-5" title="5"><span class="kw">import</span> <span class="dt">Data.Text</span> (<span class="dt">Text</span>)</a>
+<a class="sourceLine" id="cb6-6" title="6"><span class="kw">import</span> <span class="kw">qualified</span> <span class="dt">Data.Text</span> <span class="kw">as</span> <span class="dt">T</span></a>
+<a class="sourceLine" id="cb6-7" title="7"><span class="kw">import</span> <span class="dt">System.Process</span></a>
+<a class="sourceLine" id="cb6-8" title="8"><span class="kw">import</span> <span class="dt">Data.Maybe</span></a>
+<a class="sourceLine" id="cb6-9" title="9"></a>
+<a class="sourceLine" id="cb6-10" title="10"><span class="kw">import</span> <span class="dt">Lib</span> (tshow)</a>
+<a class="sourceLine" id="cb6-11" title="11"></a>
+<a class="sourceLine" id="cb6-12" title="12"><span class="kw">class</span> <span class="dt">ValidArg</span> a <span class="kw">where</span></a>
+<a class="sourceLine" id="cb6-13" title="13"><span class="ot">  toText ::</span> a <span class="ot">-&gt;</span> <span class="dt">Text</span></a>
+<a class="sourceLine" id="cb6-14" title="14"></a>
+<a class="sourceLine" id="cb6-15" title="15"><span class="kw">instance</span> <span class="dt">ValidArg</span> <span class="dt">String</span> <span class="kw">where</span></a>
+<a class="sourceLine" id="cb6-16" title="16">  toText <span class="ot">=</span> T.pack</a>
+<a class="sourceLine" id="cb6-17" title="17"></a>
+<a class="sourceLine" id="cb6-18" title="18"><span class="kw">instance</span> <span class="dt">ValidArg</span> <span class="dt">Text</span> <span class="kw">where</span></a>
+<a class="sourceLine" id="cb6-19" title="19">  toText <span class="ot">=</span> <span class="fu">id</span></a>
+<a class="sourceLine" id="cb6-20" title="20"></a>
+<a class="sourceLine" id="cb6-21" title="21"><span class="kw">instance</span> <span class="dt">ValidArg</span> <span class="dt">Int</span> <span class="kw">where</span></a>
+<a class="sourceLine" id="cb6-22" title="22">  toText <span class="ot">=</span> tshow</a>
+<a class="sourceLine" id="cb6-23" title="23"></a>
+<a class="sourceLine" id="cb6-24" title="24"><span class="kw">instance</span> <span class="dt">ValidArg</span> <span class="dt">Double</span> <span class="kw">where</span></a>
+<a class="sourceLine" id="cb6-25" title="25">  toText <span class="ot">=</span> tshow</a>
+<a class="sourceLine" id="cb6-26" title="26"></a>
+<a class="sourceLine" id="cb6-27" title="27"><span class="ot">macros ::</span> [(<span class="dt">Text</span>, <span class="dt">Text</span>)]</a>
+<a class="sourceLine" id="cb6-28" title="28">macros <span class="ot">=</span></a>
+<a class="sourceLine" id="cb6-29" title="29">  [ (<span class="st">&quot;R&quot;</span>,<span class="st">&quot;float&quot;</span>)</a>
+<a class="sourceLine" id="cb6-30" title="30">  , (<span class="st">&quot;E&quot;</span>,<span class="st">&quot;R&quot;</span>)</a>
+<a class="sourceLine" id="cb6-31" title="31">  , (<span class="st">&quot;stride&quot;</span>,<span class="st">&quot;int&quot;</span>)</a>
+<a class="sourceLine" id="cb6-32" title="32">  , (<span class="st">&quot;INT&quot;</span>,<span class="st">&quot;int&quot;</span>)</a>
+<a class="sourceLine" id="cb6-33" title="33">  , (<span class="st">&quot;K(x)&quot;</span>,<span class="st">&quot;((E) x)&quot;</span>)</a>
+<a class="sourceLine" id="cb6-34" title="34">  , (<span class="st">&quot;DK(name,value)&quot;</span>,<span class="st">&quot;const E name = K(value)&quot;</span>)</a>
+<a class="sourceLine" id="cb6-35" title="35">  , (<span class="st">&quot;WS(s,i)&quot;</span>,<span class="st">&quot;s*i&quot;</span>)</a>
+<a class="sourceLine" id="cb6-36" title="36">  , (<span class="st">&quot;MAKE_VOLATILE_STRIDE(x,y)&quot;</span>,<span class="st">&quot;0&quot;</span>)</a>
+<a class="sourceLine" id="cb6-37" title="37">  , (<span class="st">&quot;FMA(a,b,c)&quot;</span>,<span class="st">&quot;a * b + c&quot;</span>)</a>
+<a class="sourceLine" id="cb6-38" title="38">  , (<span class="st">&quot;FMS(a,b,c)&quot;</span>,<span class="st">&quot;a * b - c&quot;</span>)</a>
+<a class="sourceLine" id="cb6-39" title="39">  , (<span class="st">&quot;FNMA(a,b,c)&quot;</span>,<span class="st">&quot;-a * b - c&quot;</span>)</a>
+<a class="sourceLine" id="cb6-40" title="40">  , (<span class="st">&quot;FNMS(a,b,c)&quot;</span>,<span class="st">&quot;-a * b + c&quot;</span>) ]</a>
+<a class="sourceLine" id="cb6-41" title="41"></a>
+<a class="sourceLine" id="cb6-42" title="42"><span class="ot">genMacros ::</span> <span class="dt">Text</span></a>
+<a class="sourceLine" id="cb6-43" title="43">genMacros <span class="ot">=</span> T.unlines <span class="op">$</span> <span class="fu">map</span> (\(k, v) <span class="ot">-&gt;</span> <span class="st">&quot;#define &quot;</span> <span class="op">&lt;&gt;</span> k <span class="op">&lt;&gt;</span> <span class="st">&quot; &quot;</span> <span class="op">&lt;&gt;</span> v) macros</a>
+<a class="sourceLine" id="cb6-44" title="44"></a>
+<a class="sourceLine" id="cb6-45" title="45"><span class="ot">genFFT ::</span> <span class="dt">Text</span> <span class="ot">-&gt;</span> [<span class="dt">Text</span>] <span class="ot">-&gt;</span> <span class="dt">IO</span> <span class="dt">Text</span></a>
+<a class="sourceLine" id="cb6-46" title="46">genFFT kind args <span class="ot">=</span> <span class="kw">do</span></a>
+<a class="sourceLine" id="cb6-47" title="47">  <span class="kw">let</span> progName <span class="ot">=</span> T.unpack <span class="op">$</span> <span class="st">&quot;./genfft/gen_&quot;</span> <span class="op">&lt;&gt;</span> kind <span class="op">&lt;&gt;</span> <span class="st">&quot;.native&quot;</span></a>
+<a class="sourceLine" id="cb6-48" title="48">      <span class="co">-- spec = RawCommand progName (map T.unpack args)</span></a>
+<a class="sourceLine" id="cb6-49" title="49">  code <span class="ot">&lt;-</span> T.pack <span class="op">&lt;$&gt;</span> readProcess progName (<span class="fu">map</span> T.unpack args) <span class="st">&quot;&quot;</span></a>
+<a class="sourceLine" id="cb6-50" title="50">  indent code</a>
+<a class="sourceLine" id="cb6-51" title="51"></a>
+<a class="sourceLine" id="cb6-52" title="52"><span class="ot">indent ::</span> <span class="dt">Text</span> <span class="ot">-&gt;</span> <span class="dt">IO</span> <span class="dt">Text</span></a>
+<a class="sourceLine" id="cb6-53" title="53">indent x <span class="ot">=</span> T.pack <span class="op">&lt;$&gt;</span> readProcess <span class="st">&quot;indent&quot;</span> [<span class="st">&quot;-nut&quot;</span>] (T.unpack x)</a>
+<a class="sourceLine" id="cb6-54" title="54"></a>
+<a class="sourceLine" id="cb6-55" title="55"><span class="kw">data</span> <span class="dt">GenFFTArgs</span> <span class="ot">=</span> <span class="dt">GenFFTArgs</span></a>
+<a class="sourceLine" id="cb6-56" title="56">  {<span class="ot"> compact     ::</span> <span class="dt">Bool</span></a>
+<a class="sourceLine" id="cb6-57" title="57">  ,<span class="ot"> standalone  ::</span> <span class="dt">Bool</span></a>
+<a class="sourceLine" id="cb6-58" title="58">  ,<span class="ot"> opencl      ::</span> <span class="dt">Bool</span></a>
+<a class="sourceLine" id="cb6-59" title="59">  ,<span class="ot"> name        ::</span> <span class="dt">Maybe</span> <span class="dt">Text</span> } <span class="kw">deriving</span> (<span class="dt">Show</span>)</a>
+<a class="sourceLine" id="cb6-60" title="60"></a>
+<a class="sourceLine" id="cb6-61" title="61"><span class="ot">defaultArgs ::</span> <span class="dt">GenFFTArgs</span></a>
+<a class="sourceLine" id="cb6-62" title="62">defaultArgs <span class="ot">=</span> <span class="dt">GenFFTArgs</span></a>
+<a class="sourceLine" id="cb6-63" title="63">  { compact <span class="ot">=</span> <span class="dt">True</span></a>
+<a class="sourceLine" id="cb6-64" title="64">  , standalone <span class="ot">=</span> <span class="dt">True</span></a>
+<a class="sourceLine" id="cb6-65" title="65">  , opencl <span class="ot">=</span> <span class="dt">True</span></a>
+<a class="sourceLine" id="cb6-66" title="66">  , name <span class="ot">=</span> <span class="dt">Nothing</span> }</a>
+<a class="sourceLine" id="cb6-67" title="67"></a>
+<a class="sourceLine" id="cb6-68" title="68"><span class="ot">optionalArg ::</span> (<span class="dt">ValidArg</span> a) <span class="ot">=&gt;</span> <span class="dt">Text</span> <span class="ot">-&gt;</span> <span class="dt">Maybe</span> a <span class="ot">-&gt;</span> [<span class="dt">Text</span>]</a>
+<a class="sourceLine" id="cb6-69" title="69">optionalArg opt val <span class="ot">=</span> fromMaybe [] (<span class="kw">do</span> {n <span class="ot">&lt;-</span> val; <span class="fu">return</span> [opt, toText n]})</a>
+<a class="sourceLine" id="cb6-70" title="70"></a>
+<a class="sourceLine" id="cb6-71" title="71"><span class="ot">argList ::</span> <span class="dt">GenFFTArgs</span> <span class="ot">-&gt;</span> [<span class="dt">Text</span>]</a>
+<a class="sourceLine" id="cb6-72" title="72">argList <span class="dt">GenFFTArgs</span>{<span class="op">..</span>} <span class="ot">=</span></a>
+<a class="sourceLine" id="cb6-73" title="73">  optionalArg <span class="st">&quot;-name&quot;</span> name</a>
+<a class="sourceLine" id="cb6-74" title="74">  <span class="op">&lt;&gt;</span> [<span class="st">&quot;-compact&quot;</span> <span class="op">|</span> compact]</a>
+<a class="sourceLine" id="cb6-75" title="75">  <span class="op">&lt;&gt;</span> [<span class="st">&quot;-standalone&quot;</span> <span class="op">|</span> standalone]</a>
+<a class="sourceLine" id="cb6-76" title="76">  <span class="op">&lt;&gt;</span> [<span class="st">&quot;-opencl&quot;</span> <span class="op">|</span> opencl]</a>
+<a class="sourceLine" id="cb6-77" title="77"></a>
+<a class="sourceLine" id="cb6-78" title="78"><span class="ot">genNoTwiddle ::</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">GenFFTArgs</span> <span class="ot">-&gt;</span> <span class="dt">IO</span> <span class="dt">Text</span></a>
+<a class="sourceLine" id="cb6-79" title="79">genNoTwiddle radix args <span class="ot">=</span> <span class="kw">do</span></a>
+<a class="sourceLine" id="cb6-80" title="80">  <span class="kw">let</span> name&#39; <span class="ot">=</span> fromMaybe (<span class="st">&quot;notw_&quot;</span> <span class="op">&lt;&gt;</span> tshow radix) (name args)</a>
+<a class="sourceLine" id="cb6-81" title="81">  genFFT <span class="st">&quot;notw&quot;</span> <span class="op">$</span> [<span class="st">&quot;-n&quot;</span>, tshow radix] <span class="op">&lt;&gt;</span> argList args{name<span class="ot">=</span><span class="dt">Just</span> name&#39;}</a>
+<a class="sourceLine" id="cb6-82" title="82"></a>
+<a class="sourceLine" id="cb6-83" title="83"><span class="ot">genTwiddle ::</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">GenFFTArgs</span> <span class="ot">-&gt;</span> <span class="dt">IO</span> <span class="dt">Text</span></a>
+<a class="sourceLine" id="cb6-84" title="84">genTwiddle radix args <span class="ot">=</span> <span class="kw">do</span></a>
+<a class="sourceLine" id="cb6-85" title="85">  <span class="kw">let</span> name&#39; <span class="ot">=</span> fromMaybe (<span class="st">&quot;twiddle_&quot;</span> <span class="op">&lt;&gt;</span> tshow radix) (name args)</a>
+<a class="sourceLine" id="cb6-86" title="86">  genFFT <span class="st">&quot;twiddle&quot;</span> <span class="op">$</span> [<span class="st">&quot;-n&quot;</span>, tshow radix] <span class="op">&lt;&gt;</span> argList args{name<span class="ot">=</span><span class="dt">Just</span> name&#39;}</a></code></pre></div>
+<h2 id="generating-larger-fft">Generating larger FFT</h2>
+<p><em>file: «src/Synthesis.hs»=</em></p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb7-1" title="1"><span class="ot">{-# LANGUAGE DataKinds,GeneralizedNewtypeDeriving #-}</span></a>
+<a class="sourceLine" id="cb7-2" title="2"><span class="ot">{-# LANGUAGE RecordWildCards #-}</span></a>
+<a class="sourceLine" id="cb7-3" title="3"><span class="ot">{-# LANGUAGE OverloadedStrings #-}</span></a>
+<a class="sourceLine" id="cb7-4" title="4"><span class="ot">{-# LANGUAGE UndecidableInstances #-}</span></a>
+<a class="sourceLine" id="cb7-5" title="5"></a>
+<a class="sourceLine" id="cb7-6" title="6"><span class="kw">module</span> <span class="dt">Synthesis</span> <span class="kw">where</span></a>
+<a class="sourceLine" id="cb7-7" title="7"></a>
+<a class="sourceLine" id="cb7-8" title="8"><span class="kw">import</span> <span class="dt">Data.Complex</span> (<span class="dt">Complex</span>(..))</a>
+<a class="sourceLine" id="cb7-9" title="9"><span class="kw">import</span> <span class="dt">Data.Text</span> (<span class="dt">Text</span>)</a>
+<a class="sourceLine" id="cb7-10" title="10"></a>
+<a class="sourceLine" id="cb7-11" title="11"><span class="kw">import</span> <span class="dt">Data.Set</span> (<span class="dt">Set</span>)</a>
+<a class="sourceLine" id="cb7-12" title="12"><span class="kw">import</span> <span class="kw">qualified</span> <span class="dt">Data.Set</span> <span class="kw">as</span> <span class="dt">S</span></a>
+<a class="sourceLine" id="cb7-13" title="13"><span class="kw">import</span> <span class="kw">qualified</span> <span class="dt">Data.Text</span> <span class="kw">as</span> <span class="dt">T</span></a>
+<a class="sourceLine" id="cb7-14" title="14"><span class="kw">import</span> <span class="dt">Data.List</span> (sort)</a>
+<a class="sourceLine" id="cb7-15" title="15"></a>
+<a class="sourceLine" id="cb7-16" title="16"><span class="kw">import</span> <span class="dt">AST</span></a>
+<a class="sourceLine" id="cb7-17" title="17"><span class="kw">import</span> <span class="dt">Array</span></a>
+<a class="sourceLine" id="cb7-18" title="18"><span class="kw">import</span> <span class="dt">Lib</span></a>
+<a class="sourceLine" id="cb7-19" title="19"><span class="kw">import</span> <span class="dt">Control.Monad.Except</span></a>
+<a class="sourceLine" id="cb7-20" title="20"></a>
+<a class="sourceLine" id="cb7-21" title="21"><span class="kw">import</span> <span class="dt">Math.NumberTheory.Primes.Factorisation</span> (factorise)</a>
+<a class="sourceLine" id="cb7-22" title="22"></a>
+<a class="sourceLine" id="cb7-23" title="23"><span class="kw">type</span> <span class="dt">NoTwiddleCodelet</span> a <span class="ot">=</span> <span class="dt">Function</span></a>
+<a class="sourceLine" id="cb7-24" title="24">  [ <span class="dt">Array</span> a, <span class="dt">Array</span> a</a>
+<a class="sourceLine" id="cb7-25" title="25">  , <span class="dt">Array</span> a, <span class="dt">Array</span> a</a>
+<a class="sourceLine" id="cb7-26" title="26">  , <span class="dt">Int</span>, <span class="dt">Int</span>, <span class="dt">Int</span>, <span class="dt">Int</span>, <span class="dt">Int</span> ] ()</a>
+<a class="sourceLine" id="cb7-27" title="27"></a>
+<a class="sourceLine" id="cb7-28" title="28"><span class="kw">type</span> <span class="dt">TwiddleCodelet</span> a <span class="ot">=</span> <span class="dt">Function</span></a>
+<a class="sourceLine" id="cb7-29" title="29">  [ <span class="dt">Array</span> a, <span class="dt">Array</span> a</a>
+<a class="sourceLine" id="cb7-30" title="30">  , <span class="dt">Array</span> a</a>
+<a class="sourceLine" id="cb7-31" title="31">  , <span class="dt">Int</span>, <span class="dt">Int</span>, <span class="dt">Int</span>, <span class="dt">Int</span> ] ()</a>
+<a class="sourceLine" id="cb7-32" title="32"></a>
+<a class="sourceLine" id="cb7-33" title="33"><span class="ot">(!?) ::</span> <span class="dt">MonadError</span> <span class="dt">Text</span> m <span class="ot">=&gt;</span> [a] <span class="ot">-&gt;</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> m a</a>
+<a class="sourceLine" id="cb7-34" title="34">[] <span class="op">!?</span> _ <span class="ot">=</span> throwError <span class="st">&quot;List index error.&quot;</span></a>
+<a class="sourceLine" id="cb7-35" title="35">(x<span class="op">:</span>xs) <span class="op">!?</span> i</a>
+<a class="sourceLine" id="cb7-36" title="36">  <span class="op">|</span> i <span class="op">==</span> <span class="dv">0</span>    <span class="ot">=</span> <span class="fu">return</span> x</a>
+<a class="sourceLine" id="cb7-37" title="37">  <span class="op">|</span> <span class="fu">otherwise</span> <span class="ot">=</span> xs <span class="op">!?</span> (i <span class="op">-</span> <span class="dv">1</span>)</a>
+<a class="sourceLine" id="cb7-38" title="38"></a>
+<a class="sourceLine" id="cb7-39" title="39"><span class="ot">planNoTwiddle ::</span> (<span class="dt">MonadError</span> <span class="dt">Text</span> m, <span class="dt">RealFloat</span> a) <span class="ot">=&gt;</span> <span class="dt">NoTwiddleCodelet</span> a <span class="ot">-&gt;</span> <span class="dt">Array</span> (<span class="dt">Complex</span> a) <span class="ot">-&gt;</span> <span class="dt">Array</span> (<span class="dt">Complex</span> a) <span class="ot">-&gt;</span> m (<span class="dt">Expr</span> ())</a>
+<a class="sourceLine" id="cb7-40" title="40">planNoTwiddle f inp out <span class="ot">=</span> <span class="kw">do</span></a>
+<a class="sourceLine" id="cb7-41" title="41">  is  <span class="ot">&lt;-</span> stride inp <span class="op">!?</span> <span class="dv">0</span></a>
+<a class="sourceLine" id="cb7-42" title="42">  os  <span class="ot">&lt;-</span> stride out <span class="op">!?</span> <span class="dv">0</span></a>
+<a class="sourceLine" id="cb7-43" title="43">  v   <span class="ot">&lt;-</span> shape inp <span class="op">!?</span> <span class="dv">1</span></a>
+<a class="sourceLine" id="cb7-44" title="44">  ivs <span class="ot">&lt;-</span> stride inp <span class="op">!?</span> <span class="dv">1</span></a>
+<a class="sourceLine" id="cb7-45" title="45">  ovs <span class="ot">&lt;-</span> stride out <span class="op">!?</span> <span class="dv">1</span></a>
+<a class="sourceLine" id="cb7-46" title="46">  <span class="fu">return</span> <span class="op">$</span> <span class="dt">Apply</span> f (<span class="dt">ArrayRef</span> (realPart inp) <span class="op">:+:</span> <span class="dt">ArrayRef</span> (imagPart inp) <span class="op">:+:</span></a>
+<a class="sourceLine" id="cb7-47" title="47">                    <span class="dt">ArrayRef</span> (realPart out) <span class="op">:+:</span> <span class="dt">ArrayRef</span> (imagPart out) <span class="op">:+:</span></a>
+<a class="sourceLine" id="cb7-48" title="48">                    <span class="dt">Literal</span> is <span class="op">:+:</span> <span class="dt">Literal</span> os <span class="op">:+:</span> <span class="dt">Literal</span> v <span class="op">:+:</span> <span class="dt">Literal</span> ivs <span class="op">:+:</span> <span class="dt">Literal</span> ovs <span class="op">:+:</span> <span class="dt">TNull</span>)</a>
+<a class="sourceLine" id="cb7-49" title="49"></a>
+<a class="sourceLine" id="cb7-50" title="50"><span class="ot">planTwiddle ::</span> (<span class="dt">MonadError</span> <span class="dt">Text</span> m, <span class="dt">RealFloat</span> a) <span class="ot">=&gt;</span> <span class="dt">TwiddleCodelet</span> a <span class="ot">-&gt;</span> <span class="dt">Array</span> (<span class="dt">Complex</span> a) <span class="ot">-&gt;</span> <span class="dt">Array</span> (<span class="dt">Complex</span> a) <span class="ot">-&gt;</span> m (<span class="dt">Expr</span> ())</a>
+<a class="sourceLine" id="cb7-51" title="51">planTwiddle f inp twiddle <span class="ot">=</span> <span class="kw">do</span></a>
+<a class="sourceLine" id="cb7-52" title="52">  rs  <span class="ot">&lt;-</span> stride inp <span class="op">!?</span> <span class="dv">0</span></a>
+<a class="sourceLine" id="cb7-53" title="53">  me  <span class="ot">&lt;-</span> shape inp <span class="op">!?</span> <span class="dv">1</span></a>
+<a class="sourceLine" id="cb7-54" title="54">  ms  <span class="ot">&lt;-</span> stride inp <span class="op">!?</span> <span class="dv">1</span></a>
+<a class="sourceLine" id="cb7-55" title="55">  <span class="fu">return</span> <span class="op">$</span> <span class="dt">Apply</span> f (<span class="dt">ArrayRef</span> (realPart inp) <span class="op">:+:</span> <span class="dt">ArrayRef</span> (imagPart inp) <span class="op">:+:</span></a>
+<a class="sourceLine" id="cb7-56" title="56">                    <span class="dt">ArrayRef</span> (realPart twiddle) <span class="op">:+:</span> <span class="dt">Literal</span> rs <span class="op">:+:</span> <span class="dt">Literal</span> <span class="dv">0</span> <span class="op">:+:</span> <span class="dt">Literal</span> me <span class="op">:+:</span> <span class="dt">Literal</span> ms <span class="op">:+:</span> <span class="dt">TNull</span>)</a>
+<a class="sourceLine" id="cb7-57" title="57"></a>
+<a class="sourceLine" id="cb7-58" title="58"><span class="kw">data</span> <span class="dt">Codelet</span> <span class="ot">=</span> <span class="dt">Codelet</span></a>
+<a class="sourceLine" id="cb7-59" title="59">  {<span class="ot"> codeletPrefix ::</span> <span class="dt">Text</span></a>
+<a class="sourceLine" id="cb7-60" title="60">  ,<span class="ot"> codeletRadix  ::</span> <span class="dt">Int</span> }</a>
+<a class="sourceLine" id="cb7-61" title="61">  <span class="kw">deriving</span> (<span class="dt">Eq</span>, <span class="dt">Show</span>, <span class="dt">Ord</span>)</a>
+<a class="sourceLine" id="cb7-62" title="62"></a>
+<a class="sourceLine" id="cb7-63" title="63"><span class="ot">codeletName ::</span> <span class="dt">Codelet</span> <span class="ot">-&gt;</span> <span class="dt">Text</span></a>
+<a class="sourceLine" id="cb7-64" title="64">codeletName <span class="dt">Codelet</span>{<span class="op">..</span>} <span class="ot">=</span> codeletPrefix <span class="op">&lt;&gt;</span> <span class="st">&quot;_&quot;</span> <span class="op">&lt;&gt;</span> tshow codeletRadix</a>
+<a class="sourceLine" id="cb7-65" title="65"></a>
+<a class="sourceLine" id="cb7-66" title="66"><span class="ot">factorsName ::</span> <span class="dt">Shape</span> <span class="ot">-&gt;</span> <span class="dt">Text</span></a>
+<a class="sourceLine" id="cb7-67" title="67">factorsName s <span class="ot">=</span> <span class="st">&quot;w_&quot;</span> <span class="op">&lt;&gt;</span> T.intercalate <span class="st">&quot;_&quot;</span> (<span class="fu">map</span> tshow s)</a>
+<a class="sourceLine" id="cb7-68" title="68"></a>
+<a class="sourceLine" id="cb7-69" title="69"><span class="kw">newtype</span> <span class="dt">Algorithm</span> <span class="ot">=</span> <span class="dt">Algorithm</span> (<span class="dt">Set</span> <span class="dt">Codelet</span>, <span class="dt">Set</span> <span class="dt">Shape</span>, [<span class="dt">Stmt</span>])</a>
+<a class="sourceLine" id="cb7-70" title="70">  <span class="kw">deriving</span> (<span class="dt">Semigroup</span>, <span class="dt">Monoid</span>)</a>
+<a class="sourceLine" id="cb7-71" title="71"></a>
+<a class="sourceLine" id="cb7-72" title="72"><span class="co">-- instance (Monad m) =&gt; Semigroup (m Algorithm) where</span></a>
+<a class="sourceLine" id="cb7-73" title="73"><span class="co">--   a &lt;&gt; b = do</span></a>
+<a class="sourceLine" id="cb7-74" title="74"><span class="co">--     a&#39; &lt;- a</span></a>
+<a class="sourceLine" id="cb7-75" title="75"><span class="co">--     b&#39; &lt;- b</span></a>
+<a class="sourceLine" id="cb7-76" title="76"><span class="co">--     return (a&#39; &lt;&gt; b&#39;)</span></a>
+<a class="sourceLine" id="cb7-77" title="77"></a>
+<a class="sourceLine" id="cb7-78" title="78"><span class="kw">instance</span> (<span class="dt">Monad</span> m, <span class="dt">Semigroup</span> (m <span class="dt">Algorithm</span>)) <span class="ot">=&gt;</span> <span class="dt">Monoid</span> (m <span class="dt">Algorithm</span>) <span class="kw">where</span></a>
+<a class="sourceLine" id="cb7-79" title="79">  <span class="fu">mempty</span> <span class="ot">=</span> <span class="fu">return</span> <span class="fu">mempty</span></a>
+<a class="sourceLine" id="cb7-80" title="80"></a>
+<a class="sourceLine" id="cb7-81" title="81"><span class="ot">noTwiddleFFT ::</span> (<span class="dt">MonadError</span> <span class="dt">Text</span> m, <span class="dt">RealFloat</span> a) <span class="ot">=&gt;</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">Array</span> (<span class="dt">Complex</span> a) <span class="ot">-&gt;</span> <span class="dt">Array</span> (<span class="dt">Complex</span> a) <span class="ot">-&gt;</span> m <span class="dt">Algorithm</span></a>
+<a class="sourceLine" id="cb7-82" title="82">noTwiddleFFT n inp out <span class="ot">=</span> <span class="kw">do</span></a>
+<a class="sourceLine" id="cb7-83" title="83">  <span class="kw">let</span> codelet <span class="ot">=</span> <span class="dt">Codelet</span> <span class="st">&quot;notw&quot;</span> n</a>
+<a class="sourceLine" id="cb7-84" title="84">      f <span class="ot">=</span> <span class="dt">Function</span> (codeletName codelet)<span class="ot"> ::</span> <span class="dt">NoTwiddleCodelet</span> a</a>
+<a class="sourceLine" id="cb7-85" title="85">  plan <span class="ot">&lt;-</span> planNoTwiddle f inp out</a>
+<a class="sourceLine" id="cb7-86" title="86">  <span class="fu">return</span> <span class="op">$</span> <span class="dt">Algorithm</span> (S.fromList [codelet], <span class="fu">mempty</span>, [<span class="dt">Expression</span> plan])</a>
+<a class="sourceLine" id="cb7-87" title="87"></a>
+<a class="sourceLine" id="cb7-88" title="88"><span class="ot">twiddleFFT ::</span> (<span class="dt">MonadError</span> <span class="dt">Text</span> m, <span class="dt">RealFloat</span> a) <span class="ot">=&gt;</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">Array</span> (<span class="dt">Complex</span> a) <span class="ot">-&gt;</span> <span class="dt">Array</span> (<span class="dt">Complex</span> a) <span class="ot">-&gt;</span> m <span class="dt">Algorithm</span></a>
+<a class="sourceLine" id="cb7-89" title="89">twiddleFFT n inp twiddle <span class="ot">=</span> <span class="kw">do</span></a>
+<a class="sourceLine" id="cb7-90" title="90">  <span class="kw">let</span> codelet <span class="ot">=</span> <span class="dt">Codelet</span> <span class="st">&quot;twiddle&quot;</span> n</a>
+<a class="sourceLine" id="cb7-91" title="91">      f <span class="ot">=</span> <span class="dt">Function</span> (codeletName codelet)<span class="ot"> ::</span> <span class="dt">TwiddleCodelet</span> a</a>
+<a class="sourceLine" id="cb7-92" title="92">  plan <span class="ot">&lt;-</span> planTwiddle f inp twiddle</a>
+<a class="sourceLine" id="cb7-93" title="93">  <span class="fu">return</span> <span class="op">$</span> <span class="dt">Algorithm</span> (S.fromList [codelet], <span class="fu">mempty</span>, [<span class="dt">Expression</span> plan])</a>
+<a class="sourceLine" id="cb7-94" title="94"></a>
+<a class="sourceLine" id="cb7-95" title="95"><span class="co">-- nFactorFFT :: (MonadError Text m, RealFloat a) =&gt; [Int] -&gt; Array (Complex a) -&gt; Array (Complex a) -&gt; m Algorithm</span></a>
+<a class="sourceLine" id="cb7-96" title="96"><span class="ot">nFactorFFT ::</span> <span class="dt">RealFloat</span> a <span class="ot">=&gt;</span> [<span class="dt">Int</span>] <span class="ot">-&gt;</span> <span class="dt">Array</span> (<span class="dt">Complex</span> a) <span class="ot">-&gt;</span> <span class="dt">Array</span> (<span class="dt">Complex</span> a) <span class="ot">-&gt;</span> <span class="dt">Either</span> <span class="dt">Text</span> <span class="dt">Algorithm</span></a>
+<a class="sourceLine" id="cb7-97" title="97">nFactorFFT [] _ _         <span class="ot">=</span> <span class="fu">return</span> <span class="fu">mempty</span></a>
+<a class="sourceLine" id="cb7-98" title="98">nFactorFFT [x] inp out    <span class="ot">=</span> noTwiddleFFT x inp out</a>
+<a class="sourceLine" id="cb7-99" title="99">nFactorFFT (x<span class="op">:</span>xs) inp out <span class="ot">=</span> <span class="kw">do</span></a>
+<a class="sourceLine" id="cb7-100" title="100">  <span class="kw">let</span> n <span class="ot">=</span> <span class="fu">product</span> xs</a>
+<a class="sourceLine" id="cb7-101" title="101">      w_array <span class="ot">=</span> <span class="dt">Array</span> (factorsName [n, x]) [n, x] (fromShape [n, x] <span class="dv">1</span>) <span class="dv">0</span></a>
+<a class="sourceLine" id="cb7-102" title="102">      subfft i <span class="ot">=</span> <span class="kw">do</span> {</a>
+<a class="sourceLine" id="cb7-103" title="103">        inp&#39; <span class="ot">&lt;-</span> reshape [n, x] <span class="op">=&lt;&lt;</span> select <span class="dv">1</span> i inp;</a>
+<a class="sourceLine" id="cb7-104" title="104">        out&#39; <span class="ot">&lt;-</span> reshape [x, n] <span class="op">=&lt;&lt;</span> select <span class="dv">1</span> i out;</a>
+<a class="sourceLine" id="cb7-105" title="105">        (nFactorFFT xs (transpose inp&#39;) out&#39;) <span class="op">&lt;&gt;</span> (twiddleFFT x (transpose out&#39;) w_array) }<span class="ot"> ::</span> <span class="dt">Either</span> <span class="dt">Text</span> <span class="dt">Algorithm</span></a>
+<a class="sourceLine" id="cb7-106" title="106"></a>
+<a class="sourceLine" id="cb7-107" title="107">  l <span class="ot">&lt;-</span> shape inp <span class="op">!?</span> <span class="dv">1</span></a>
+<a class="sourceLine" id="cb7-108" title="108">  <span class="fu">mconcat</span> (<span class="fu">map</span> subfft [<span class="dv">0</span><span class="op">..</span>l])</a>
+<a class="sourceLine" id="cb7-109" title="109"></a>
+<a class="sourceLine" id="cb7-110" title="110"><span class="ot">factors ::</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> [<span class="dt">Int</span>]</a>
+<a class="sourceLine" id="cb7-111" title="111">factors n <span class="ot">=</span> <span class="fu">sort</span> <span class="op">$</span> <span class="fu">concatMap</span> (\(i, m) <span class="ot">-&gt;</span> <span class="fu">take</span> m <span class="op">$</span> <span class="fu">repeat</span> (<span class="fu">fromIntegral</span><span class="ot"> i ::</span> <span class="dt">Int</span>)) (factorise <span class="op">$</span> <span class="fu">fromIntegral</span> n)</a>
+<a class="sourceLine" id="cb7-112" title="112"></a>
+<a class="sourceLine" id="cb7-113" title="113"><span class="ot">fullFactorFFT ::</span> <span class="dt">RealFloat</span> a <span class="ot">=&gt;</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">Array</span> (<span class="dt">Complex</span> a) <span class="ot">-&gt;</span> <span class="dt">Array</span> (<span class="dt">Complex</span> a) <span class="ot">-&gt;</span> <span class="dt">Either</span> <span class="dt">Text</span> <span class="dt">Algorithm</span></a>
+<a class="sourceLine" id="cb7-114" title="114">fullFactorFFT n <span class="ot">=</span> nFactorFFT (factors n)</a></code></pre></div>
+<h2 id="appendix-miscellaneous-functions">Appendix: Miscellaneous functions</h2>
+<p><em>file: «src/Lib.hs»=</em></p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb8-1" title="1"><span class="kw">module</span> <span class="dt">Lib</span> <span class="kw">where</span></a>
+<a class="sourceLine" id="cb8-2" title="2"></a>
+<a class="sourceLine" id="cb8-3" title="3"><span class="kw">import</span> <span class="dt">Data.Text</span> (<span class="dt">Text</span>)</a>
+<a class="sourceLine" id="cb8-4" title="4"><span class="kw">import</span> <span class="kw">qualified</span> <span class="dt">Data.Text</span> <span class="kw">as</span> <span class="dt">T</span></a>
+<a class="sourceLine" id="cb8-5" title="5"></a>
+<a class="sourceLine" id="cb8-6" title="6"><span class="op">&lt;&lt;</span>lib<span class="op">-</span>list<span class="op">-</span>manipulation<span class="op">&gt;&gt;</span></a>
+<a class="sourceLine" id="cb8-7" title="7"></a>
+<a class="sourceLine" id="cb8-8" title="8"><span class="ot">tshow ::</span> <span class="dt">Show</span> a <span class="ot">=&gt;</span> a <span class="ot">-&gt;</span> <span class="dt">Text</span></a>
+<a class="sourceLine" id="cb8-9" title="9">tshow <span class="ot">=</span> T.pack <span class="op">.</span> <span class="fu">show</span></a></code></pre></div>
 <h3 id="list-manipulation">List manipulation</h3>
 <p>We will be manipulating the shape and stride lists to slice the n-dimensional array. These operations just didn’t make it into Haskell’s standard library.</p>
 <p><em>«lib-list-manipulation»=</em></p>
 <div class="sourceCode" id="lib-list-manipulation"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="lib-list-manipulation-1" title="1"><span class="ot">remove ::</span> [a] <span class="ot">-&gt;</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> [a]</a>
-<a class="sourceLine" id="lib-list-manipulation-2" title="2">remove [] _ <span class="fu">=</span> []</a>
-<a class="sourceLine" id="lib-list-manipulation-3" title="3">remove (x<span class="fu">:</span>xs) n</a>
-<a class="sourceLine" id="lib-list-manipulation-4" title="4">    <span class="fu">|</span> n <span class="fu">==</span> <span class="dv">0</span> <span class="fu">=</span> xs</a>
-<a class="sourceLine" id="lib-list-manipulation-5" title="5">    <span class="fu">|</span> <span class="fu">otherwise</span> <span class="fu">=</span> x <span class="fu">:</span> remove xs (n <span class="fu">-</span> <span class="dv">1</span>)</a>
+<a class="sourceLine" id="lib-list-manipulation-2" title="2">remove [] _ <span class="ot">=</span> []</a>
+<a class="sourceLine" id="lib-list-manipulation-3" title="3">remove (x<span class="op">:</span>xs) n</a>
+<a class="sourceLine" id="lib-list-manipulation-4" title="4">    <span class="op">|</span> n <span class="op">==</span> <span class="dv">0</span> <span class="ot">=</span> xs</a>
+<a class="sourceLine" id="lib-list-manipulation-5" title="5">    <span class="op">|</span> <span class="fu">otherwise</span> <span class="ot">=</span> x <span class="op">:</span> remove xs (n <span class="op">-</span> <span class="dv">1</span>)</a>
 <a class="sourceLine" id="lib-list-manipulation-6" title="6"></a>
 <a class="sourceLine" id="lib-list-manipulation-7" title="7"><span class="ot">replace ::</span> [a] <span class="ot">-&gt;</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> a <span class="ot">-&gt;</span> [a]</a>
-<a class="sourceLine" id="lib-list-manipulation-8" title="8">replace [] _  _ <span class="fu">=</span> []</a>
-<a class="sourceLine" id="lib-list-manipulation-9" title="9">replace (x<span class="fu">:</span>xs) n y</a>
-<a class="sourceLine" id="lib-list-manipulation-10" title="10">    <span class="fu">|</span> n <span class="fu">==</span> <span class="dv">0</span> <span class="fu">=</span> y<span class="fu">:</span>xs</a>
-<a class="sourceLine" id="lib-list-manipulation-11" title="11">    <span class="fu">|</span> <span class="fu">otherwise</span> <span class="fu">=</span> x <span class="fu">:</span> replace xs (n <span class="fu">-</span> <span class="dv">1</span>) y</a>
+<a class="sourceLine" id="lib-list-manipulation-8" title="8">replace [] _  _ <span class="ot">=</span> []</a>
+<a class="sourceLine" id="lib-list-manipulation-9" title="9">replace (x<span class="op">:</span>xs) n y</a>
+<a class="sourceLine" id="lib-list-manipulation-10" title="10">    <span class="op">|</span> n <span class="op">==</span> <span class="dv">0</span> <span class="ot">=</span> y<span class="op">:</span>xs</a>
+<a class="sourceLine" id="lib-list-manipulation-11" title="11">    <span class="op">|</span> <span class="fu">otherwise</span> <span class="ot">=</span> x <span class="op">:</span> replace xs (n <span class="op">-</span> <span class="dv">1</span>) y</a>
 <a class="sourceLine" id="lib-list-manipulation-12" title="12"></a>
 <a class="sourceLine" id="lib-list-manipulation-13" title="13"><span class="ot">insert ::</span> [a] <span class="ot">-&gt;</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> a <span class="ot">-&gt;</span> [a]</a>
-<a class="sourceLine" id="lib-list-manipulation-14" title="14">insert [] _  _ <span class="fu">=</span> []</a>
-<a class="sourceLine" id="lib-list-manipulation-15" title="15">insert (x<span class="fu">:</span>xs) n y</a>
-<a class="sourceLine" id="lib-list-manipulation-16" title="16">    <span class="fu">|</span> n <span class="fu">==</span> <span class="dv">0</span> <span class="fu">=</span> y<span class="fu">:</span>x<span class="fu">:</span>xs</a>
-<a class="sourceLine" id="lib-list-manipulation-17" title="17">    <span class="fu">|</span> <span class="fu">otherwise</span> <span class="fu">=</span> x <span class="fu">:</span> insert xs (n <span class="fu">-</span> <span class="dv">1</span>) y</a></code></pre></div>
+<a class="sourceLine" id="lib-list-manipulation-14" title="14">insert [] _  _ <span class="ot">=</span> []</a>
+<a class="sourceLine" id="lib-list-manipulation-15" title="15">insert (x<span class="op">:</span>xs) n y</a>
+<a class="sourceLine" id="lib-list-manipulation-16" title="16">    <span class="op">|</span> n <span class="op">==</span> <span class="dv">0</span> <span class="ot">=</span> y<span class="op">:</span>x<span class="op">:</span>xs</a>
+<a class="sourceLine" id="lib-list-manipulation-17" title="17">    <span class="op">|</span> <span class="fu">otherwise</span> <span class="ot">=</span> x <span class="op">:</span> insert xs (n <span class="op">-</span> <span class="dv">1</span>) y</a></code></pre></div>
 <h2 id="unit-tests-1">Unit tests</h2>
 <p><em>file: «test/Spec.hs»=</em></p>
-<div class="sourceCode" id="cb7"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb7-1" title="1"><span class="ot">{-# LANGUAGE DuplicateRecordFields #-}</span></a>
-<a class="sourceLine" id="cb7-2" title="2"></a>
-<a class="sourceLine" id="cb7-3" title="3"><span class="kw">import</span> <span class="dt">Test.Hspec</span></a>
-<a class="sourceLine" id="cb7-4" title="4"><span class="kw">import</span> <span class="dt">Data.Complex</span></a>
-<a class="sourceLine" id="cb7-5" title="5"><span class="kw">import</span> <span class="dt">Control.Applicative</span> (liftA2)</a>
-<a class="sourceLine" id="cb7-6" title="6"></a>
-<a class="sourceLine" id="cb7-7" title="7"><span class="kw">import</span> <span class="dt">Data.Vector.Unboxed</span> (<span class="dt">Vector</span>)</a>
-<a class="sourceLine" id="cb7-8" title="8"><span class="kw">import</span> <span class="kw">qualified</span> <span class="dt">Data.Vector.Unboxed</span> <span class="kw">as</span> <span class="dt">V</span></a>
-<a class="sourceLine" id="cb7-9" title="9"></a>
-<a class="sourceLine" id="cb7-10" title="10"><span class="kw">import</span> <span class="dt">Array</span></a>
-<a class="sourceLine" id="cb7-11" title="11"><span class="kw">import</span> <span class="dt">Lib</span></a>
-<a class="sourceLine" id="cb7-12" title="12"><span class="kw">import</span> <span class="dt">TwiddleFactors</span></a>
-<a class="sourceLine" id="cb7-13" title="13"></a>
-<a class="sourceLine" id="cb7-14" title="14"><span class="fu">&lt;&lt;</span>test<span class="fu">-</span>predicates<span class="fu">&gt;&gt;</span></a>
-<a class="sourceLine" id="cb7-15" title="15"></a>
-<a class="sourceLine" id="cb7-16" title="16"><span class="ot">testTwiddleFactors ::</span> <span class="dt">Spec</span></a>
-<a class="sourceLine" id="cb7-17" title="17">testTwiddleFactors <span class="fu">=</span> <span class="kw">do</span></a>
-<a class="sourceLine" id="cb7-18" title="18">    <span class="fu">&lt;&lt;</span>test<span class="fu">-</span>twiddle<span class="fu">-</span>factors<span class="fu">&gt;&gt;</span></a>
-<a class="sourceLine" id="cb7-19" title="19"></a>
-<a class="sourceLine" id="cb7-20" title="20"><span class="ot">main ::</span> <span class="dt">IO</span> ()</a>
-<a class="sourceLine" id="cb7-21" title="21">main <span class="fu">=</span> hspec <span class="fu">$</span> <span class="kw">do</span></a>
-<a class="sourceLine" id="cb7-22" title="22">    describe <span class="st">&quot;Strides.fromShape&quot;</span> <span class="fu">$</span> <span class="kw">do</span></a>
-<a class="sourceLine" id="cb7-23" title="23">        it <span class="st">&quot;computes strides from shapes&quot;</span> <span class="fu">$</span> <span class="kw">do</span></a>
-<a class="sourceLine" id="cb7-24" title="24">            fromShape [<span class="dv">3</span>, <span class="dv">3</span>, <span class="dv">3</span>] <span class="dv">1</span> <span class="ot">`shouldBe`</span> [<span class="dv">1</span>, <span class="dv">3</span>, <span class="dv">9</span>]</a>
-<a class="sourceLine" id="cb7-25" title="25">            fromShape [<span class="dv">2</span>, <span class="dv">3</span>, <span class="dv">5</span>] <span class="dv">1</span> <span class="ot">`shouldBe`</span> [<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">6</span>]</a>
-<a class="sourceLine" id="cb7-26" title="26"></a>
-<a class="sourceLine" id="cb7-27" title="27">    describe <span class="st">&quot;Strides.remove&quot;</span> <span class="fu">$</span> <span class="kw">do</span></a>
-<a class="sourceLine" id="cb7-28" title="28">        it <span class="st">&quot;drops indexed entry from list&quot;</span> <span class="fu">$</span> <span class="kw">do</span></a>
-<a class="sourceLine" id="cb7-29" title="29">            remove [<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>, <span class="dv">4</span>] <span class="dv">0</span> <span class="ot">`shouldBe`</span> [<span class="dv">2</span>, <span class="dv">3</span>, <span class="dv">4</span>]</a>
-<a class="sourceLine" id="cb7-30" title="30">            remove [<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>, <span class="dv">4</span>] <span class="dv">2</span> <span class="ot">`shouldBe`</span> [<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">4</span>]</a>
-<a class="sourceLine" id="cb7-31" title="31"></a>
-<a class="sourceLine" id="cb7-32" title="32">    describe <span class="st">&quot;Strides.replace&quot;</span> <span class="fu">$</span> <span class="kw">do</span></a>
-<a class="sourceLine" id="cb7-33" title="33">        it <span class="st">&quot;replaces entry at index&quot;</span> <span class="fu">$</span> <span class="kw">do</span></a>
-<a class="sourceLine" id="cb7-34" title="34">            replace [<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>, <span class="dv">4</span>] <span class="dv">0</span> <span class="dv">7</span> <span class="ot">`shouldBe`</span> [<span class="dv">7</span>, <span class="dv">2</span>, <span class="dv">3</span>, <span class="dv">4</span>]</a>
-<a class="sourceLine" id="cb7-35" title="35">            replace [<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>, <span class="dv">4</span>] <span class="dv">2</span> <span class="dv">7</span> <span class="ot">`shouldBe`</span> [<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">7</span>, <span class="dv">4</span>]</a>
-<a class="sourceLine" id="cb7-36" title="36"></a>
-<a class="sourceLine" id="cb7-37" title="37">    describe <span class="st">&quot;Strides.insert&quot;</span> <span class="fu">$</span> <span class="kw">do</span></a>
-<a class="sourceLine" id="cb7-38" title="38">        it <span class="st">&quot;inserts entry at index&quot;</span> <span class="fu">$</span> <span class="kw">do</span></a>
-<a class="sourceLine" id="cb7-39" title="39">            insert [<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>, <span class="dv">4</span>] <span class="dv">0</span> <span class="dv">7</span> <span class="ot">`shouldBe`</span> [<span class="dv">7</span>, <span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>, <span class="dv">4</span>]</a>
-<a class="sourceLine" id="cb7-40" title="40">            insert [<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>, <span class="dv">4</span>] <span class="dv">2</span> <span class="dv">7</span> <span class="ot">`shouldBe`</span> [<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">7</span>, <span class="dv">3</span>, <span class="dv">4</span>]</a>
-<a class="sourceLine" id="cb7-41" title="41"></a>
-<a class="sourceLine" id="cb7-42" title="42">    <span class="kw">let</span> a1 <span class="fu">=</span> floatArray <span class="st">&quot;test&quot;</span> [<span class="dv">4</span>, <span class="dv">5</span>]</a>
-<a class="sourceLine" id="cb7-43" title="43">    describe <span class="st">&quot;Strides.select&quot;</span> <span class="fu">$</span> <span class="kw">do</span></a>
-<a class="sourceLine" id="cb7-44" title="44">        it <span class="st">&quot;selects sub-array&quot;</span> <span class="fu">$</span> <span class="kw">do</span></a>
-<a class="sourceLine" id="cb7-45" title="45">            <span class="kw">let</span> a103 <span class="fu">=</span> select a1 <span class="dv">0</span> <span class="dv">3</span></a>
-<a class="sourceLine" id="cb7-46" title="46">            <span class="kw">let</span> a112 <span class="fu">=</span> select a1 <span class="dv">1</span> <span class="dv">2</span></a>
-<a class="sourceLine" id="cb7-47" title="47">            (shape <span class="fu">&lt;$&gt;</span> a103) <span class="ot">`shouldBe`</span> <span class="dt">Right</span> [<span class="dv">5</span>]</a>
-<a class="sourceLine" id="cb7-48" title="48">            (stride <span class="fu">&lt;$&gt;</span> a103) <span class="ot">`shouldBe`</span> <span class="dt">Right</span> [<span class="dv">4</span>]</a>
-<a class="sourceLine" id="cb7-49" title="49">            (offset <span class="fu">&lt;$&gt;</span> a103) <span class="ot">`shouldBe`</span> <span class="dt">Right</span> <span class="dv">3</span></a>
-<a class="sourceLine" id="cb7-50" title="50">            (shape <span class="fu">&lt;$&gt;</span> a112) <span class="ot">`shouldBe`</span> <span class="dt">Right</span> [<span class="dv">4</span>]</a>
-<a class="sourceLine" id="cb7-51" title="51">            (stride <span class="fu">&lt;$&gt;</span> a112) <span class="ot">`shouldBe`</span> <span class="dt">Right</span> [<span class="dv">1</span>]</a>
-<a class="sourceLine" id="cb7-52" title="52">            (offset <span class="fu">&lt;$&gt;</span> a112) <span class="ot">`shouldBe`</span> <span class="dt">Right</span> <span class="dv">8</span></a>
-<a class="sourceLine" id="cb7-53" title="53"></a>
-<a class="sourceLine" id="cb7-54" title="54">    testTwiddleFactors</a></code></pre></div>
+<div class="sourceCode" id="cb9"><pre class="sourceCode haskell"><code class="sourceCode haskell"><a class="sourceLine" id="cb9-1" title="1"><span class="ot">{-# LANGUAGE DuplicateRecordFields #-}</span></a>
+<a class="sourceLine" id="cb9-2" title="2"></a>
+<a class="sourceLine" id="cb9-3" title="3"><span class="kw">import</span> <span class="dt">Test.Hspec</span></a>
+<a class="sourceLine" id="cb9-4" title="4"><span class="kw">import</span> <span class="dt">Data.Complex</span></a>
+<a class="sourceLine" id="cb9-5" title="5"><span class="kw">import</span> <span class="dt">Control.Applicative</span> (liftA2)</a>
+<a class="sourceLine" id="cb9-6" title="6"></a>
+<a class="sourceLine" id="cb9-7" title="7"><span class="kw">import</span> <span class="dt">Data.Vector.Unboxed</span> (<span class="dt">Vector</span>)</a>
+<a class="sourceLine" id="cb9-8" title="8"><span class="kw">import</span> <span class="kw">qualified</span> <span class="dt">Data.Vector.Unboxed</span> <span class="kw">as</span> <span class="dt">V</span></a>
+<a class="sourceLine" id="cb9-9" title="9"></a>
+<a class="sourceLine" id="cb9-10" title="10"><span class="kw">import</span> <span class="dt">Array</span></a>
+<a class="sourceLine" id="cb9-11" title="11"><span class="kw">import</span> <span class="dt">Lib</span></a>
+<a class="sourceLine" id="cb9-12" title="12"><span class="kw">import</span> <span class="dt">TwiddleFactors</span></a>
+<a class="sourceLine" id="cb9-13" title="13"></a>
+<a class="sourceLine" id="cb9-14" title="14"><span class="op">&lt;&lt;</span>test<span class="op">-</span>predicates<span class="op">&gt;&gt;</span></a>
+<a class="sourceLine" id="cb9-15" title="15"></a>
+<a class="sourceLine" id="cb9-16" title="16"><span class="ot">testTwiddleFactors ::</span> <span class="dt">Spec</span></a>
+<a class="sourceLine" id="cb9-17" title="17">testTwiddleFactors <span class="ot">=</span> <span class="kw">do</span></a>
+<a class="sourceLine" id="cb9-18" title="18">    <span class="op">&lt;&lt;</span>test<span class="op">-</span>twiddle<span class="op">-</span>factors<span class="op">&gt;&gt;</span></a>
+<a class="sourceLine" id="cb9-19" title="19"></a>
+<a class="sourceLine" id="cb9-20" title="20"><span class="ot">main ::</span> <span class="dt">IO</span> ()</a>
+<a class="sourceLine" id="cb9-21" title="21">main <span class="ot">=</span> hspec <span class="op">$</span> <span class="kw">do</span></a>
+<a class="sourceLine" id="cb9-22" title="22">    describe <span class="st">&quot;Strides.fromShape&quot;</span> <span class="op">$</span></a>
+<a class="sourceLine" id="cb9-23" title="23">        it <span class="st">&quot;computes strides from shapes&quot;</span> <span class="op">$</span> <span class="kw">do</span></a>
+<a class="sourceLine" id="cb9-24" title="24">            fromShape [<span class="dv">3</span>, <span class="dv">3</span>, <span class="dv">3</span>] <span class="dv">1</span> <span class="ot">`shouldBe`</span> [<span class="dv">1</span>, <span class="dv">3</span>, <span class="dv">9</span>]</a>
+<a class="sourceLine" id="cb9-25" title="25">            fromShape [<span class="dv">2</span>, <span class="dv">3</span>, <span class="dv">5</span>] <span class="dv">1</span> <span class="ot">`shouldBe`</span> [<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">6</span>]</a>
+<a class="sourceLine" id="cb9-26" title="26"></a>
+<a class="sourceLine" id="cb9-27" title="27">    describe <span class="st">&quot;Strides.remove&quot;</span> <span class="op">$</span></a>
+<a class="sourceLine" id="cb9-28" title="28">        it <span class="st">&quot;drops indexed entry from list&quot;</span> <span class="op">$</span> <span class="kw">do</span></a>
+<a class="sourceLine" id="cb9-29" title="29">            remove [<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>, <span class="dv">4</span><span class="ot"> ::</span> <span class="dt">Int</span>] <span class="dv">0</span> <span class="ot">`shouldBe`</span> [<span class="dv">2</span>, <span class="dv">3</span>, <span class="dv">4</span>]</a>
+<a class="sourceLine" id="cb9-30" title="30">            remove [<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>, <span class="dv">4</span><span class="ot"> ::</span> <span class="dt">Int</span>] <span class="dv">2</span> <span class="ot">`shouldBe`</span> [<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">4</span>]</a>
+<a class="sourceLine" id="cb9-31" title="31"></a>
+<a class="sourceLine" id="cb9-32" title="32">    describe <span class="st">&quot;Strides.replace&quot;</span> <span class="op">$</span></a>
+<a class="sourceLine" id="cb9-33" title="33">        it <span class="st">&quot;replaces entry at index&quot;</span> <span class="op">$</span> <span class="kw">do</span></a>
+<a class="sourceLine" id="cb9-34" title="34">            replace [<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>, <span class="dv">4</span><span class="ot"> ::</span> <span class="dt">Int</span>] <span class="dv">0</span> <span class="dv">7</span> <span class="ot">`shouldBe`</span> [<span class="dv">7</span>, <span class="dv">2</span>, <span class="dv">3</span>, <span class="dv">4</span>]</a>
+<a class="sourceLine" id="cb9-35" title="35">            replace [<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>, <span class="dv">4</span><span class="ot"> ::</span> <span class="dt">Int</span>] <span class="dv">2</span> <span class="dv">7</span> <span class="ot">`shouldBe`</span> [<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">7</span>, <span class="dv">4</span>]</a>
+<a class="sourceLine" id="cb9-36" title="36"></a>
+<a class="sourceLine" id="cb9-37" title="37">    describe <span class="st">&quot;Strides.insert&quot;</span> <span class="op">$</span></a>
+<a class="sourceLine" id="cb9-38" title="38">        it <span class="st">&quot;inserts entry at index&quot;</span> <span class="op">$</span> <span class="kw">do</span></a>
+<a class="sourceLine" id="cb9-39" title="39">            insert [<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>, <span class="dv">4</span><span class="ot"> ::</span> <span class="dt">Int</span>] <span class="dv">0</span> <span class="dv">7</span> <span class="ot">`shouldBe`</span> [<span class="dv">7</span>, <span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>, <span class="dv">4</span>]</a>
+<a class="sourceLine" id="cb9-40" title="40">            insert [<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>, <span class="dv">4</span><span class="ot"> ::</span> <span class="dt">Int</span>] <span class="dv">2</span> <span class="dv">7</span> <span class="ot">`shouldBe`</span> [<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">7</span>, <span class="dv">3</span>, <span class="dv">4</span>]</a>
+<a class="sourceLine" id="cb9-41" title="41"></a>
+<a class="sourceLine" id="cb9-42" title="42">    <span class="kw">let</span> a1 <span class="ot">=</span> floatArray <span class="st">&quot;test&quot;</span> [<span class="dv">4</span>, <span class="dv">5</span>]</a>
+<a class="sourceLine" id="cb9-43" title="43">    describe <span class="st">&quot;Strides.select&quot;</span> <span class="op">$</span></a>
+<a class="sourceLine" id="cb9-44" title="44">        it <span class="st">&quot;selects sub-array&quot;</span> <span class="op">$</span> <span class="kw">do</span></a>
+<a class="sourceLine" id="cb9-45" title="45">            <span class="kw">let</span> a103 <span class="ot">=</span> select a1 <span class="dv">0</span> <span class="dv">3</span></a>
+<a class="sourceLine" id="cb9-46" title="46">            <span class="kw">let</span> a112 <span class="ot">=</span> select a1 <span class="dv">1</span> <span class="dv">2</span></a>
+<a class="sourceLine" id="cb9-47" title="47">            (shape <span class="op">&lt;$&gt;</span> a103) <span class="ot">`shouldBe`</span> <span class="dt">Right</span> [<span class="dv">5</span>]</a>
+<a class="sourceLine" id="cb9-48" title="48">            (stride <span class="op">&lt;$&gt;</span> a103) <span class="ot">`shouldBe`</span> <span class="dt">Right</span> [<span class="dv">4</span>]</a>
+<a class="sourceLine" id="cb9-49" title="49">            (offset <span class="op">&lt;$&gt;</span> a103) <span class="ot">`shouldBe`</span> <span class="dt">Right</span> <span class="dv">3</span></a>
+<a class="sourceLine" id="cb9-50" title="50">            (shape <span class="op">&lt;$&gt;</span> a112) <span class="ot">`shouldBe`</span> <span class="dt">Right</span> [<span class="dv">4</span>]</a>
+<a class="sourceLine" id="cb9-51" title="51">            (stride <span class="op">&lt;$&gt;</span> a112) <span class="ot">`shouldBe`</span> <span class="dt">Right</span> [<span class="dv">1</span>]</a>
+<a class="sourceLine" id="cb9-52" title="52">            (offset <span class="op">&lt;$&gt;</span> a112) <span class="ot">`shouldBe`</span> <span class="dt">Right</span> <span class="dv">8</span></a>
+<a class="sourceLine" id="cb9-53" title="53"></a>
+<a class="sourceLine" id="cb9-54" title="54">    testTwiddleFactors</a></code></pre></div>
 </body>
 </html>
