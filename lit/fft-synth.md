@@ -63,6 +63,7 @@ import Control.Monad.Except
 
 import Lib
 
+
 <<array-numeric-class>>
 <<array-types>>
 <<array-methods>>
@@ -99,6 +100,10 @@ data Array a = Array
     , shape    :: Shape
     , stride   :: Stride
     , offset   :: Int } deriving (Show)
+
+-- data ArrayIndex a = ArrayIndex
+--    { name     :: Text
+--     , index    :: Int } deriving (Show)
 
 floatArray :: Text -> Shape -> Array Float
 floatArray name shape = Array name shape (fromShape shape 1) 0
@@ -176,7 +181,10 @@ reshape newShape array
     | contiguous array = return $ array
         { shape = newShape
         , stride = fromShape newShape 1 }
-    | otherwise = throwError "Cannot reshape non-contiguous array."
+    | (ndim array) == 1 = return $ array
+        { shape = newShape
+        , stride = fromShape newShape (head $ stride array) }
+    | otherwise = throwError "Cannot reshape multi-dimensional non-contiguous array."
 ```
 
 The `select`, `extrude`, and `slice` methods do the same as the Numpy array slice notation.
@@ -220,20 +228,29 @@ slice dim a b step array@Array{shape,stride,offset} = do
 A codelet, for the moment, is just some function that we can call.
 
 ``` {.haskell file=src/Codelet.hs}
-module Codelet where
+{-# LANGUAGE RecordWildCards #-}
+
+module Codelet
+  ( Codelet(..)
+  , CodeletType(..)
+  , codeletName ) where
 
 import Data.Text (Text)
-import qualified Data.Text as T
-
 import Lib
-import AST
+
+data CodeletType = Twiddle | NoTwiddle deriving (Eq, Ord)
+
+instance Show CodeletType where
+  show Twiddle = "twiddle"
+  show NoTwiddle = "notw"
 
 data Codelet = Codelet
-    { prefix  :: Text
-    , radix   :: Int }
+  { codeletType  :: CodeletType
+  , codeletRadix :: Int }
+  deriving (Eq, Show, Ord)
 
 codeletName :: Codelet -> Text
-codeletName c = prefix c <> "_" <> tshow (radix c)
+codeletName Codelet{..} = tshow codeletType <> "_" <> tshow codeletRadix
 ```
 
 # Twiddle factors
@@ -257,14 +274,20 @@ module TwiddleFactors where
 
 import Data.Complex
 
+import Data.Text (Text)
+import qualified Data.Text as T
 import Data.Vector.Unboxed (Vector)
 import qualified Data.Vector.Unboxed as V
 
 import Array
+import Lib
 
 <<twiddle-factors-w>>
 <<twiddle-factors-multi-w>>
 <<twiddle-factors-make>>
+
+factorsName :: Shape -> Text
+factorsName s = "w_" <> T.intercalate "_" (map tshow s)
 ```
 
 We still have the equation
@@ -292,7 +315,7 @@ indices :: Shape -> [[Int]]
 indices = foldr (\ n -> concatMap (\ idcs -> map (: idcs) [0 .. n-1])) [[]]
 
 makeTwiddle :: Shape -> Vector (Complex Double)
-makeTwiddle shape = V.fromList $ map (multiW shape) $ indices shape
+makeTwiddle shape = V.drop (head shape) $ V.fromList $ map (multiW shape) $ indices shape
 ```
 
 ## Unit tests
@@ -349,12 +372,14 @@ import Lib
 class (Show a) => Declarable a where
   typename :: proxy a -> Text
 
+data NameSpace = Static | Global | Constant
+
 data Pointer a = Pointer deriving (Show)
 data Function :: [*] -> * -> * where
   Function :: Text -> Function a b
   deriving (Show)
 newtype Variable a = Variable Text deriving (Show)
-newtype Constant a = Constant Text deriving (Show)
+-- newtype Constant a = Constant Text deriving (Show)
 
 instance Declarable Int where
   typename _ = "int"
@@ -385,7 +410,7 @@ data Expr a where
     -- ComplexValue   :: Complex Double -> Expr (Complex Double)
     ArrayRef       :: Array a -> Expr (Array a)
     VarReference   :: Variable a -> Expr a
-    ConstReference :: Constant a -> Expr a
+    -- ConstReference :: Constant a -> Expr a
     ArrayIndex     :: Array a -> [Expr Int] -> Expr a
     TUnit          :: Expr ()
     TNull          :: Expr (HList '[])
@@ -402,6 +427,7 @@ data Stmt where
     Expression       :: Expr () -> Stmt
     ParallelFor      :: Variable Int -> Range -> [Stmt] -> Stmt
     Assignment       :: (Show a) => Variable a -> Expr a -> Stmt
+    FunctionDef      :: Function a b -> [Stmt] -> [Stmt] -> Stmt
 
 -- deriving instance Show Stmt
 
@@ -417,7 +443,9 @@ instance Syntax (Expr a) where
   generate (Literal x) = tshow x
   generate (IntegerValue x) = tshow x
   generate (RealValue x) = tshow x
-  generate (ArrayRef x) = name x <> " + " <> tshow (offset x)
+  generate (ArrayRef x)
+    | (offset x) == 0 = name x
+    | otherwise       = name x <> " + " <> tshow (offset x)
   generate (VarReference (Variable x)) = x
   generate (ConstReference (Constant x)) = x
   generate (ArrayIndex a i) = name a <> "[<index expression>]"
@@ -448,6 +476,7 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import System.Process
 import Data.Maybe
+import Codelet (Codelet(..), codeletName)
 
 import Lib (tshow)
 
@@ -526,6 +555,11 @@ genTwiddle :: Int -> GenFFTArgs -> IO Text
 genTwiddle radix args = do
   let name' = fromMaybe ("twiddle_" <> tshow radix) (name args)
   genFFT "twiddle" $ ["-n", tshow radix] <> argList args{name=Just name'}
+
+gen :: GenFFTArgs -> Codelet -> IO Text
+gen args codelet@Codelet{..} = do
+  let name' = codeletName codelet
+  genFFT (tshow codeletType) $ ["-n", tshow codeletRadix] <> argList args{name=Just name'}
 ```
 
 # Generating larger FFT
@@ -538,18 +572,22 @@ genTwiddle radix args = do
 
 module Synthesis where
 
+-- import Debug.Trace
+
 import Data.Complex (Complex(..))
 import Data.Text (Text)
+-- import qualified Data.Text as T
 
 import Data.Set (Set)
 import qualified Data.Set as S
-import qualified Data.Text as T
 import Data.List (sort)
 
 import AST
 import Array
 import Lib
 import Control.Monad.Except
+import Codelet
+import TwiddleFactors
 
 import Math.NumberTheory.Primes.Factorisation (factorise)
 
@@ -564,7 +602,7 @@ type TwiddleCodelet a = Function
   , Int, Int, Int, Int ] ()
 
 (!?) :: MonadError Text m => [a] -> Int -> m a
-[] !? _ = throwError "List index error."
+[] !? i = throwError $ "List index error: list " <> tshow (i + 1) <> " too short."
 (x:xs) !? i
   | i == 0    = return x
   | otherwise = xs !? (i - 1)
@@ -588,19 +626,13 @@ planTwiddle f inp twiddle = do
   return $ Apply f (ArrayRef (realPart inp) :+: ArrayRef (imagPart inp) :+:
                     ArrayRef (realPart twiddle) :+: Literal rs :+: Literal 0 :+: Literal me :+: Literal ms :+: TNull)
 
-data Codelet = Codelet
-  { codeletPrefix :: Text
-  , codeletRadix  :: Int }
-  deriving (Eq, Show, Ord)
+data Algorithm = Algorithm
+  { codelets   :: Set Codelet
+  , twiddles   :: Set Shape
+  , statements :: [Stmt] }
 
-codeletName :: Codelet -> Text
-codeletName Codelet{..} = codeletPrefix <> "_" <> tshow codeletRadix
-
-factorsName :: Shape -> Text
-factorsName s = "w_" <> T.intercalate "_" (map tshow s)
-
-newtype Algorithm = Algorithm (Set Codelet, Set Shape, [Stmt])
-  deriving (Semigroup, Monoid)
+defineTwiddles :: Shape -> Algorithm
+defineTwiddles shape = Algorithm mempty (S.fromList [shape]) mempty
 
 -- instance (Monad m) => Semigroup (m Algorithm) where
 --   a <> b = do
@@ -608,37 +640,52 @@ newtype Algorithm = Algorithm (Set Codelet, Set Shape, [Stmt])
 --     b' <- b
 --     return (a' <> b')
 
+instance Semigroup Algorithm where
+  (Algorithm c1 t1 s1) <> (Algorithm c2 t2 s2) = Algorithm (c1 <> c2) (t1 <> t2) (s1 <> s2)
+
+instance Monoid Algorithm where
+  mempty = Algorithm mempty mempty mempty
+
+instance {-# OVERLAPPING #-} Semigroup (Either Text Algorithm) where
+  (Left a) <> _ = Left a
+  _ <> (Left b) = Left b
+  (Right a) <> (Right b) = Right (a <> b)
+
 instance (Monad m, Semigroup (m Algorithm)) => Monoid (m Algorithm) where
   mempty = return mempty
 
 noTwiddleFFT :: (MonadError Text m, RealFloat a) => Int -> Array (Complex a) -> Array (Complex a) -> m Algorithm
 noTwiddleFFT n inp out = do
-  let codelet = Codelet "notw" n
+  let codelet = Codelet NoTwiddle n
       f = Function (codeletName codelet) :: NoTwiddleCodelet a
   plan <- planNoTwiddle f inp out
-  return $ Algorithm (S.fromList [codelet], mempty, [Expression plan])
+  return $ Algorithm (S.fromList [codelet]) mempty [Expression plan]
 
 twiddleFFT :: (MonadError Text m, RealFloat a) => Int -> Array (Complex a) -> Array (Complex a) -> m Algorithm
 twiddleFFT n inp twiddle = do
-  let codelet = Codelet "twiddle" n
+  let codelet = Codelet Twiddle n
       f = Function (codeletName codelet) :: TwiddleCodelet a
   plan <- planTwiddle f inp twiddle
-  return $ Algorithm (S.fromList [codelet], mempty, [Expression plan])
+  return $ Algorithm (S.fromList [codelet]) mempty [Expression plan]
 
 -- nFactorFFT :: (MonadError Text m, RealFloat a) => [Int] -> Array (Complex a) -> Array (Complex a) -> m Algorithm
 nFactorFFT :: RealFloat a => [Int] -> Array (Complex a) -> Array (Complex a) -> Either Text Algorithm
 nFactorFFT [] _ _         = return mempty
 nFactorFFT [x] inp out    = noTwiddleFFT x inp out
 nFactorFFT (x:xs) inp out = do
+  -- | trace ("nFactorFFT " ++ show (x:xs) ++ " " ++ show inp ++ " " ++ show out) True = do
   let n = product xs
       w_array = Array (factorsName [n, x]) [n, x] (fromShape [n, x] 1) 0
-      subfft i = do {
-        inp' <- reshape [n, x] =<< select 1 i inp;
-        out' <- reshape [x, n] =<< select 1 i out;
-        (nFactorFFT xs (transpose inp') out') <> (twiddleFFT x (transpose out') w_array) } :: Either Text Algorithm
+      subfft i = do
+          -- | trace ("subfft " ++ show i) True = do 
+          inp' <- reshape [n, x] =<< select 1 i inp
+          out' <- reshape [x, n] =<< select 1 i out
+          (nFactorFFT xs (transpose inp') out')
+            <> (twiddleFFT x (transpose out') w_array)
+            <> Right (defineTwiddles [n, x])
 
   l <- shape inp !? 1
-  mconcat (map subfft [0..l])
+  mconcat (map subfft [0..(l-1)])
 
 factors :: Int -> [Int]
 factors n = sort $ concatMap (\(i, m) -> take m $ repeat (fromIntegral i :: Int)) (factorise $ fromIntegral n)
