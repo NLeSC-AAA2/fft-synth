@@ -1,5 +1,8 @@
 -- ------ language="Haskell" file="src/Codelet.hs"
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE DataKinds,GeneralizedNewtypeDeriving #-}
+
+import AST
 
 module Codelet
   ( Codelet(..)
@@ -22,4 +25,14 @@ data Codelet = Codelet
 
 codeletName :: Codelet -> Text
 codeletName Codelet{..} = tshow codeletType <> "_" <> tshow codeletRadix
+
+type NoTwiddleCodelet a = Function
+  [ Array a, Array a
+  , Array a, Array a
+  , Int, Int, Int, Int, Int ] ()
+
+type TwiddleCodelet a = Function
+  [ Array a, Array a
+  , Array a
+  , Int, Int, Int, Int ] ()
 -- ------ end

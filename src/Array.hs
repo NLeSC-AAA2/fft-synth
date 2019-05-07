@@ -54,7 +54,7 @@ ndim :: Array a -> Int
 ndim = length . shape
 
 contiguous :: Array a -> Bool
-contiguous Array{shape,stride} = stride == fromShape shape 1
+contiguous Array{shape,stride} = stride == fromShape shape (head stride)
 -- ------ end
 -- ------ begin <<array-methods>>[2]
 rcheck :: MonadError Text m => Text -> Int -> Int -> m ()
@@ -82,12 +82,12 @@ transpose array@Array{shape, stride} = array
 -- ------ begin <<array-methods>>[5]
 reshape :: MonadError Text m => Shape -> Array a -> m (Array a)
 reshape newShape array
-    | contiguous array = return $ array
-        { shape = newShape
-        , stride = fromShape newShape 1 }
     | (ndim array) == 1 = return $ array
         { shape = newShape
         , stride = fromShape newShape (head $ stride array) }
+    | contiguous array = return $ array
+        { shape = newShape
+        , stride = fromShape newShape 1 }
     | otherwise = throwError "Cannot reshape multi-dimensional non-contiguous array."
 -- ------ end
 -- ------ begin <<array-methods>>[6]

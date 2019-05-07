@@ -6,8 +6,6 @@
 
 module Synthesis where
 
--- import Debug.Trace
-
 import Data.Complex (Complex(..))
 import Data.Text (Text)
 -- import qualified Data.Text as T
@@ -25,22 +23,13 @@ import TwiddleFactors
 
 import Math.NumberTheory.Primes.Factorisation (factorise)
 
-type NoTwiddleCodelet a = Function
-  [ Array a, Array a
-  , Array a, Array a
-  , Int, Int, Int, Int, Int ] ()
-
-type TwiddleCodelet a = Function
-  [ Array a, Array a
-  , Array a
-  , Int, Int, Int, Int ] ()
-
 (!?) :: MonadError Text m => [a] -> Int -> m a
 [] !? i = throwError $ "List index error: list " <> tshow (i + 1) <> " too short."
 (x:xs) !? i
   | i == 0    = return x
   | otherwise = xs !? (i - 1)
 
+-- ------ begin <<synth-planNoTwiddle>>[0]
 planNoTwiddle :: (MonadError Text m, RealFloat a) => NoTwiddleCodelet a -> Array (Complex a) -> Array (Complex a) -> m (Expr ())
 planNoTwiddle f inp out = do
   is  <- stride inp !? 0
@@ -50,8 +39,10 @@ planNoTwiddle f inp out = do
   ovs <- stride out !? 1
   return $ Apply f (ArrayRef (realPart inp) :+: ArrayRef (imagPart inp) :+:
                     ArrayRef (realPart out) :+: ArrayRef (imagPart out) :+:
-                    Literal is :+: Literal os :+: Literal v :+: Literal ivs :+: Literal ovs :+: TNull)
-
+                    Literal is :+: Literal os :+: Literal v :+: Literal ivs :+:
+                    Literal ovs :+: TNull)
+-- ------ end
+-- ------ begin <<synth-planTwiddle>>[0]
 planTwiddle :: (MonadError Text m, RealFloat a) => TwiddleCodelet a -> Array (Complex a) -> Array (Complex a) -> m (Expr ())
 planTwiddle f inp twiddle = do
   rs  <- stride inp !? 0
@@ -59,21 +50,14 @@ planTwiddle f inp twiddle = do
   ms  <- stride inp !? 1
   return $ Apply f (ArrayRef (realPart inp) :+: ArrayRef (imagPart inp) :+:
                     ArrayRef (realPart twiddle) :+: Literal rs :+: Literal 0 :+: Literal me :+: Literal ms :+: TNull)
-
+-- ------ end
+-- ------ begin <<synth-algorithm>>[0]
 data Algorithm = Algorithm
   { codelets   :: Set Codelet
   , twiddles   :: Set Shape
   , statements :: [Stmt] }
-
-defineTwiddles :: Shape -> Algorithm
-defineTwiddles shape = Algorithm mempty (S.fromList [shape]) mempty
-
--- instance (Monad m) => Semigroup (m Algorithm) where
---   a <> b = do
---     a' <- a
---     b' <- b
---     return (a' <> b')
-
+-- ------ end
+-- ------ begin <<synth-algorithm>>[1]
 instance Semigroup Algorithm where
   (Algorithm c1 t1 s1) <> (Algorithm c2 t2 s2) = Algorithm (c1 <> c2) (t1 <> t2) (s1 <> s2)
 
@@ -85,33 +69,34 @@ instance {-# OVERLAPPING #-} Semigroup (Either Text Algorithm) where
   _ <> (Left b) = Left b
   (Right a) <> (Right b) = Right (a <> b)
 
-instance (Monad m, Semigroup (m Algorithm)) => Monoid (m Algorithm) where
+instance Monoid (Either Text Algorithm) where
   mempty = return mempty
+-- ------ end
 
-noTwiddleFFT :: (MonadError Text m, RealFloat a) => Int -> Array (Complex a) -> Array (Complex a) -> m Algorithm
+defineTwiddles :: Shape -> Algorithm
+defineTwiddles shape = Algorithm mempty (S.fromList [shape]) mempty
+
+noTwiddleFFT :: RealFloat a => Int -> Array (Complex a) -> Array (Complex a) -> Either Text Algorithm
 noTwiddleFFT n inp out = do
   let codelet = Codelet NoTwiddle n
       f = Function (codeletName codelet) :: NoTwiddleCodelet a
   plan <- planNoTwiddle f inp out
   return $ Algorithm (S.fromList [codelet]) mempty [Expression plan]
 
-twiddleFFT :: (MonadError Text m, RealFloat a) => Int -> Array (Complex a) -> Array (Complex a) -> m Algorithm
+twiddleFFT :: RealFloat a => Int -> Array (Complex a) -> Array (Complex a) -> Either Text Algorithm
 twiddleFFT n inp twiddle = do
   let codelet = Codelet Twiddle n
       f = Function (codeletName codelet) :: TwiddleCodelet a
   plan <- planTwiddle f inp twiddle
   return $ Algorithm (S.fromList [codelet]) mempty [Expression plan]
 
--- nFactorFFT :: (MonadError Text m, RealFloat a) => [Int] -> Array (Complex a) -> Array (Complex a) -> m Algorithm
 nFactorFFT :: RealFloat a => [Int] -> Array (Complex a) -> Array (Complex a) -> Either Text Algorithm
 nFactorFFT [] _ _         = return mempty
 nFactorFFT [x] inp out    = noTwiddleFFT x inp out
 nFactorFFT (x:xs) inp out = do
-  -- | trace ("nFactorFFT " ++ show (x:xs) ++ " " ++ show inp ++ " " ++ show out) True = do
   let n = product xs
       w_array = Array (factorsName [n, x]) [n, x] (fromShape [n, x] 1) 0
       subfft i = do
-          -- | trace ("subfft " ++ show i) True = do 
           inp' <- reshape [n, x] =<< select 1 i inp
           out' <- reshape [x, n] =<< select 1 i out
           (nFactorFFT xs (transpose inp') out')

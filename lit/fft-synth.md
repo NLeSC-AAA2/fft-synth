@@ -132,7 +132,7 @@ ndim :: Array a -> Int
 ndim = length . shape
 
 contiguous :: Array a -> Bool
-contiguous Array{shape,stride} = stride == fromShape shape 1
+contiguous Array{shape,stride} = stride == fromShape shape (head stride)
 ```
 
 ### Error handling
@@ -178,12 +178,12 @@ Reshaping is only possible from an array that can be flattened to a one-dimensio
 ``` {.haskell #array-methods}
 reshape :: MonadError Text m => Shape -> Array a -> m (Array a)
 reshape newShape array
-    | contiguous array = return $ array
-        { shape = newShape
-        , stride = fromShape newShape 1 }
     | (ndim array) == 1 = return $ array
         { shape = newShape
         , stride = fromShape newShape (head $ stride array) }
+    | contiguous array = return $ array
+        { shape = newShape
+        , stride = fromShape newShape 1 }
     | otherwise = throwError "Cannot reshape multi-dimensional non-contiguous array."
 ```
 
@@ -223,12 +223,15 @@ slice dim a b step array@Array{shape,stride,offset} = do
         , offset = offset + (stride !! dim) * a }
 ```
 
-# Codelets
-
+# Codelets and Twiddles
+## Codelets
 A codelet, for the moment, is just some function that we can call.
 
 ``` {.haskell file=src/Codelet.hs}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE DataKinds,GeneralizedNewtypeDeriving #-}
+
+import AST
 
 module Codelet
   ( Codelet(..)
@@ -251,9 +254,118 @@ data Codelet = Codelet
 
 codeletName :: Codelet -> Text
 codeletName Codelet{..} = tshow codeletType <> "_" <> tshow codeletRadix
+
+type NoTwiddleCodelet a = Function
+  [ Array a, Array a
+  , Array a, Array a
+  , Int, Int, Int, Int, Int ] ()
+
+type TwiddleCodelet a = Function
+  [ Array a, Array a
+  , Array a
+  , Int, Int, Int, Int ] ()
 ```
 
-# Twiddle factors
+## Calling GenFFT
+
+This is an interface to the GenFFT executables. The most generic function here is `gen`, which can be passed a `Codelet` and a `GenFFTArgs` value, returning the generated code as `IO Text`.
+
+```{.haskell file=src/GenFFT.hs}
+{-# LANGUAGE RecordWildCards #-}
+
+module GenFFT where
+
+import Data.Text (Text)
+import qualified Data.Text as T
+import System.Process
+import Data.Maybe
+import Codelet (Codelet(..), codeletName)
+
+import Lib (tshow)
+
+class ValidArg a where
+  toText :: a -> Text
+
+instance ValidArg String where
+  toText = T.pack
+
+instance ValidArg Text where
+  toText = id
+
+instance ValidArg Int where
+  toText = tshow
+
+instance ValidArg Double where
+  toText = tshow
+
+macros :: [(Text, Text)]
+macros =
+  [ ("R","float")
+  , ("E","R")
+  , ("stride","int")
+  , ("INT","int")
+  , ("K(x)","((E) x)")
+  , ("DK(name,value)","const E name = K(value)")
+  , ("WS(s,i)","s*i")
+  , ("MAKE_VOLATILE_STRIDE(x,y)","0")
+  , ("FMA(a,b,c)","a * b + c")
+  , ("FMS(a,b,c)","a * b - c")
+  , ("FNMA(a,b,c)","-a * b - c")
+  , ("FNMS(a,b,c)","-a * b + c") ]
+
+genMacros :: Text
+genMacros = T.unlines $ map (\(k, v) -> "#define " <> k <> " " <> v) macros
+
+genFFT :: Text -> [Text] -> IO Text
+genFFT kind args = do
+  let progName = T.unpack $ "./genfft/gen_" <> kind <> ".native"
+      -- spec = RawCommand progName (map T.unpack args)
+  code <- T.pack <$> readProcess progName (map T.unpack args) ""
+  indent code
+
+indent :: Text -> IO Text
+indent x = T.pack <$> readProcess "indent" ["-nut"] (T.unpack x)
+
+data GenFFTArgs = GenFFTArgs
+  { compact     :: Bool
+  , standalone  :: Bool
+  , opencl      :: Bool
+  , name        :: Maybe Text } deriving (Show)
+
+defaultArgs :: GenFFTArgs
+defaultArgs = GenFFTArgs
+  { compact = True
+  , standalone = True
+  , opencl = True
+  , name = Nothing }
+
+optionalArg :: (ValidArg a) => Text -> Maybe a -> [Text]
+optionalArg opt val = fromMaybe [] (do {n <- val; return [opt, toText n]})
+
+argList :: GenFFTArgs -> [Text]
+argList GenFFTArgs{..} =
+  optionalArg "-name" name
+  <> ["-compact" | compact]
+  <> ["-standalone" | standalone]
+  <> ["-opencl" | opencl]
+
+genNoTwiddle :: Int -> GenFFTArgs -> IO Text
+genNoTwiddle radix args = do
+  let name' = fromMaybe ("notw_" <> tshow radix) (name args)
+  genFFT "notw" $ ["-n", tshow radix] <> argList args{name=Just name'}
+
+genTwiddle :: Int -> GenFFTArgs -> IO Text
+genTwiddle radix args = do
+  let name' = fromMaybe ("twiddle_" <> tshow radix) (name args)
+  genFFT "twiddle" $ ["-n", tshow radix] <> argList args{name=Just name'}
+
+gen :: GenFFTArgs -> Codelet -> IO Text
+gen args codelet@Codelet{..} = do
+  let name' = codeletName codelet
+  genFFT (tshow codeletType) $ ["-n", tshow codeletRadix] <> argList args{name=Just name'}
+```
+
+## Twiddle factors
 
 In Python we created an array of twiddle factors:
 
@@ -353,46 +465,22 @@ describe "TwiddleFactors.makeTwiddle" $
 
 # Abstract Syntax Tree
 
-``` {.haskell file=src/AST.hs}
+To synthesise a larger FFT we have to duplicate some of the work done in GenFFT. We'll describe calling the codelets and the matching loop structure in terms of an *abstract syntax tree*. The AST will contain a subset of OpenCL focussed on computing FFTs.
+
+Describing code structure is somewhat of a specialty of Haskell. Modern Haskell has features to describe syntax trees that are completely type safe, meaning that any expression where the types to not match up (for instance between function parameters, and applied arguments) is ill-formed to the point that they're impossible to construct. We need a few language extensions to make this work:
+
+``` {.haskell #ast-haskell-extensions}
 {-# LANGUAGE GADTs,DataKinds,TypeOperators,KindSignatures #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE FlexibleInstances,UndecidableInstances #-}
+```
 
-module AST where
+## Type lists
 
-import Data.Proxy
-import Data.Text (Text)
-import qualified Data.Text as T
+We need a way to declare the list of argument types to the codelets. In standard haskell this can be done by defining a recursive data-type, but the syntax would be ugly with lots of nested type expressions. The `DataKinds` and `TypeOperators` extensions let us define a type-level list structure and express it using normal list syntax (sometimes prefixed with a quote to disambiguate with data-level lists).
 
--- import Data.Complex
-import Array
-import Lib
-
-class (Show a) => Declarable a where
-  typename :: proxy a -> Text
-
-data NameSpace = Static | Global | Constant
-
-data Pointer a = Pointer deriving (Show)
-data Function :: [*] -> * -> * where
-  Function :: Text -> Function a b
-  deriving (Show)
-newtype Variable a = Variable Text deriving (Show)
--- newtype Constant a = Constant Text deriving (Show)
-
-instance Declarable Int where
-  typename _ = "int"
-instance Declarable Double where
-  typename _ = "R"
-instance Declarable a => Declarable (Pointer a) where
-  typename _ = typename (Proxy :: Proxy a) <> "*"
-
-data Range = Range
-    { start :: Int
-    , end   :: Int
-    , step  :: Int } deriving (Show)
-
+``` {.haskell #ast-typelists}
 data HList :: [*] -> * where
     Nil :: HList '[]
     Cons :: a -> HList l -> HList (a ': l)
@@ -402,15 +490,50 @@ instance Show (HList '[]) where
 
 instance (Show a, Show (HList l)) => Show (HList (a ': l)) where
     show (Cons x xs) = "Cons " ++ show x ++ " (" ++ show xs ++ ")"
-    
+```
+
+## OpenCL namespaces
+
+OpenCL has several namespaces for different kinds of memory: `__constant`, `__global` and `__static` (there may be more, I don't know).
+
+``` {.haskell #ast-ocl-namespaces}
+data NameSpace = Static | Global | Constant
+```
+
+## Basic types
+
+Many of the types that we define here exist just as type-level tags to larger expressions
+
+``` {.haskell #ast-basic-types}
+class (Show a) => Declarable a where
+  typename :: proxy a -> Text
+
+data Pointer a = Pointer deriving (Show)
+data Function :: [*] -> * -> * where
+  Function :: Text -> Function a b
+  deriving (Show)
+newtype Variable a = Variable Text deriving (Show)
+
+instance Declarable Int where
+  typename _ = "int"
+instance Declarable Double where
+  typename _ = "R"
+instance Declarable a => Declarable (Pointer a) where
+  typename _ = typename (Proxy :: Proxy a) <> "*"
+```
+
+## Expressions
+
+An expression is any unit of code that can be said to have some value. Expressions can be arguments to functions, or they can assigned to a variable.
+
+
+``` {.haskell #ast-expression}
 data Expr a where
     Literal        :: (Show a) => a -> Expr a
     IntegerValue   :: Int -> Expr Int
     RealValue      :: Double -> Expr Double
-    -- ComplexValue   :: Complex Double -> Expr (Complex Double)
     ArrayRef       :: Array a -> Expr (Array a)
     VarReference   :: Variable a -> Expr a
-    -- ConstReference :: Constant a -> Expr a
     ArrayIndex     :: Array a -> [Expr Int] -> Expr a
     TUnit          :: Expr ()
     TNull          :: Expr (HList '[])
@@ -418,8 +541,32 @@ data Expr a where
     Apply          :: Function a b -> Expr (HList a) -> Expr b
 
 infixr 1 :+:
+```
 
--- deriving instance Show a => Show (Expr a)
+The most important entries here are `(:+:)` and `Apply`. The `:+:` operator is used to construct an argument list. This argument list can then be applied to a function using `Apply`. As an example, here is the definition of `planNoTwiddle`. This function builds the AST for calling a no-twiddle FFT codelet, given an input and output array.
+
+``` {.haskell #synth-planNoTwiddle}
+planNoTwiddle :: (MonadError Text m, RealFloat a) => NoTwiddleCodelet a -> Array (Complex a) -> Array (Complex a) -> m (Expr ())
+planNoTwiddle f inp out = do
+  is  <- stride inp !? 0
+  os  <- stride out !? 0
+  v   <- shape inp !? 1
+  ivs <- stride inp !? 1
+  ovs <- stride out !? 1
+  return $ Apply f (ArrayRef (realPart inp) :+: ArrayRef (imagPart inp) :+:
+                    ArrayRef (realPart out) :+: ArrayRef (imagPart out) :+:
+                    Literal is :+: Literal os :+: Literal v :+: Literal ivs :+:
+                    Literal ovs :+: TNull)
+```
+
+Note that the argument list is finalized with a `TNull`, otherwise the argument list would be improper. 
+
+``` {.haskell #ast-statements}
+data Range = Range
+    { start :: Int
+    , end   :: Int
+    , step  :: Int } deriving (Show)
+
 
 data Stmt where
     VarDeclaration   :: (Declarable a, Show a) => Variable a -> Stmt
@@ -428,14 +575,13 @@ data Stmt where
     ParallelFor      :: Variable Int -> Range -> [Stmt] -> Stmt
     Assignment       :: (Show a) => Variable a -> Expr a -> Stmt
     FunctionDef      :: Function a b -> [Stmt] -> [Stmt] -> Stmt
+```
 
--- deriving instance Show Stmt
+## Generating code
 
-data FunctionDecl a b = FunctionDecl
-  { functionName :: Text
-  , argNames     :: [Text]
-  , functionBody :: [Stmt] }
+Now we can generate C/OpenCL from our AST.
 
+``` {.haskell #ast-syntax}
 class Syntax a where
   generate :: a -> Text
 
@@ -465,104 +611,78 @@ instance Syntax Stmt where
   generate (Assignment (Variable v) e) = v <> " = " <> generate e <> ";"
 ```
 
-# Calling GenFFT
+## AST Module
 
-```{.haskell file=src/GenFFT.hs}
-{-# LANGUAGE RecordWildCards #-}
+``` {.haskell file=src/AST.hs}
+<<ast-haskell-extensions>>
 
-module GenFFT where
+module AST where
 
+import Data.Proxy
 import Data.Text (Text)
 import qualified Data.Text as T
-import System.Process
-import Data.Maybe
-import Codelet (Codelet(..), codeletName)
 
-import Lib (tshow)
+import Array
+import Lib
 
-class ValidArg a where
-  toText :: a -> Text
+<<ast-ocl-namespaces>>
+<<ast-basic-types>>
+<<ast-typelists>>
+<<ast-expression>>
+<<ast-statements>>
 
-instance ValidArg String where
-  toText = T.pack
+data FunctionDecl a b = FunctionDecl
+  { functionName :: Text
+  , argNames     :: [Text]
+  , functionBody :: [Stmt] }
 
-instance ValidArg Text where
-  toText = id
-
-instance ValidArg Int where
-  toText = tshow
-
-instance ValidArg Double where
-  toText = tshow
-
-macros :: [(Text, Text)]
-macros =
-  [ ("R","float")
-  , ("E","R")
-  , ("stride","int")
-  , ("INT","int")
-  , ("K(x)","((E) x)")
-  , ("DK(name,value)","const E name = K(value)")
-  , ("WS(s,i)","s*i")
-  , ("MAKE_VOLATILE_STRIDE(x,y)","0")
-  , ("FMA(a,b,c)","a * b + c")
-  , ("FMS(a,b,c)","a * b - c")
-  , ("FNMA(a,b,c)","-a * b - c")
-  , ("FNMS(a,b,c)","-a * b + c") ]
-
-genMacros :: Text
-genMacros = T.unlines $ map (\(k, v) -> "#define " <> k <> " " <> v) macros
-
-genFFT :: Text -> [Text] -> IO Text
-genFFT kind args = do
-  let progName = T.unpack $ "./genfft/gen_" <> kind <> ".native"
-      -- spec = RawCommand progName (map T.unpack args)
-  code <- T.pack <$> readProcess progName (map T.unpack args) ""
-  indent code
-
-indent :: Text -> IO Text
-indent x = T.pack <$> readProcess "indent" ["-nut"] (T.unpack x)
-
-data GenFFTArgs = GenFFTArgs
-  { compact     :: Bool
-  , standalone  :: Bool
-  , opencl      :: Bool
-  , name        :: Maybe Text } deriving (Show)
-
-defaultArgs :: GenFFTArgs
-defaultArgs = GenFFTArgs
-  { compact = True
-  , standalone = True
-  , opencl = True
-  , name = Nothing }
-
-optionalArg :: (ValidArg a) => Text -> Maybe a -> [Text]
-optionalArg opt val = fromMaybe [] (do {n <- val; return [opt, toText n]})
-
-argList :: GenFFTArgs -> [Text]
-argList GenFFTArgs{..} =
-  optionalArg "-name" name
-  <> ["-compact" | compact]
-  <> ["-standalone" | standalone]
-  <> ["-opencl" | opencl]
-
-genNoTwiddle :: Int -> GenFFTArgs -> IO Text
-genNoTwiddle radix args = do
-  let name' = fromMaybe ("notw_" <> tshow radix) (name args)
-  genFFT "notw" $ ["-n", tshow radix] <> argList args{name=Just name'}
-
-genTwiddle :: Int -> GenFFTArgs -> IO Text
-genTwiddle radix args = do
-  let name' = fromMaybe ("twiddle_" <> tshow radix) (name args)
-  genFFT "twiddle" $ ["-n", tshow radix] <> argList args{name=Just name'}
-
-gen :: GenFFTArgs -> Codelet -> IO Text
-gen args codelet@Codelet{..} = do
-  let name' = codeletName codelet
-  genFFT (tshow codeletType) $ ["-n", tshow codeletRadix] <> argList args{name=Just name'}
+<<ast-syntax>>
 ```
 
-# Generating larger FFT
+# Synthesis of FFT
+
+When discussing expressions in the abstract syntax tree, the definition of `planNoTwiddle` was shown. Similarly the twiddle codelet:
+
+``` {.haskell #synth-planTwiddle}
+planTwiddle :: (MonadError Text m, RealFloat a) => TwiddleCodelet a -> Array (Complex a) -> Array (Complex a) -> m (Expr ())
+planTwiddle f inp twiddle = do
+  rs  <- stride inp !? 0
+  me  <- shape inp !? 1
+  ms  <- stride inp !? 1
+  return $ Apply f (ArrayRef (realPart inp) :+: ArrayRef (imagPart inp) :+:
+                    ArrayRef (realPart twiddle) :+: Literal rs :+: Literal 0 :+: Literal me :+: Literal ms :+: TNull)
+```
+
+## Algorithm
+
+An FFT algorithm now is a collection of codelets, twiddle factors and a list of statements defining how to synthesise the larger FFT.
+
+``` {.haskell #synth-algorithm}
+data Algorithm = Algorithm
+  { codelets   :: Set Codelet
+  , twiddles   :: Set Shape
+  , statements :: [Stmt] }
+```
+
+To build up an algorithm from pieces, we derive an instance of `Monoid` for both `Algorithm` and `Either Text Algorithm`, the latter handling errors during code generation. We can use the `<>` operator to take the union of the sets of codelets and twiddles, as well as appending to the list of statements.
+
+``` {.haskell #synth-algorithm}
+instance Semigroup Algorithm where
+  (Algorithm c1 t1 s1) <> (Algorithm c2 t2 s2) = Algorithm (c1 <> c2) (t1 <> t2) (s1 <> s2)
+
+instance Monoid Algorithm where
+  mempty = Algorithm mempty mempty mempty
+
+instance {-# OVERLAPPING #-} Semigroup (Either Text Algorithm) where
+  (Left a) <> _ = Left a
+  _ <> (Left b) = Left b
+  (Right a) <> (Right b) = Right (a <> b)
+
+instance Monoid (Either Text Algorithm) where
+  mempty = return mempty
+```
+
+## Synthesis Module
 
 ``` {.haskell file=src/Synthesis.hs}
 {-# LANGUAGE DataKinds,GeneralizedNewtypeDeriving #-}
@@ -571,8 +691,6 @@ gen args codelet@Codelet{..} = do
 {-# LANGUAGE UndecidableInstances #-}
 
 module Synthesis where
-
--- import Debug.Trace
 
 import Data.Complex (Complex(..))
 import Data.Text (Text)
@@ -591,93 +709,40 @@ import TwiddleFactors
 
 import Math.NumberTheory.Primes.Factorisation (factorise)
 
-type NoTwiddleCodelet a = Function
-  [ Array a, Array a
-  , Array a, Array a
-  , Int, Int, Int, Int, Int ] ()
-
-type TwiddleCodelet a = Function
-  [ Array a, Array a
-  , Array a
-  , Int, Int, Int, Int ] ()
-
 (!?) :: MonadError Text m => [a] -> Int -> m a
 [] !? i = throwError $ "List index error: list " <> tshow (i + 1) <> " too short."
 (x:xs) !? i
   | i == 0    = return x
   | otherwise = xs !? (i - 1)
 
-planNoTwiddle :: (MonadError Text m, RealFloat a) => NoTwiddleCodelet a -> Array (Complex a) -> Array (Complex a) -> m (Expr ())
-planNoTwiddle f inp out = do
-  is  <- stride inp !? 0
-  os  <- stride out !? 0
-  v   <- shape inp !? 1
-  ivs <- stride inp !? 1
-  ovs <- stride out !? 1
-  return $ Apply f (ArrayRef (realPart inp) :+: ArrayRef (imagPart inp) :+:
-                    ArrayRef (realPart out) :+: ArrayRef (imagPart out) :+:
-                    Literal is :+: Literal os :+: Literal v :+: Literal ivs :+: Literal ovs :+: TNull)
-
-planTwiddle :: (MonadError Text m, RealFloat a) => TwiddleCodelet a -> Array (Complex a) -> Array (Complex a) -> m (Expr ())
-planTwiddle f inp twiddle = do
-  rs  <- stride inp !? 0
-  me  <- shape inp !? 1
-  ms  <- stride inp !? 1
-  return $ Apply f (ArrayRef (realPart inp) :+: ArrayRef (imagPart inp) :+:
-                    ArrayRef (realPart twiddle) :+: Literal rs :+: Literal 0 :+: Literal me :+: Literal ms :+: TNull)
-
-data Algorithm = Algorithm
-  { codelets   :: Set Codelet
-  , twiddles   :: Set Shape
-  , statements :: [Stmt] }
+<<synth-planNoTwiddle>>
+<<synth-planTwiddle>>
+<<synth-algorithm>>
 
 defineTwiddles :: Shape -> Algorithm
 defineTwiddles shape = Algorithm mempty (S.fromList [shape]) mempty
 
--- instance (Monad m) => Semigroup (m Algorithm) where
---   a <> b = do
---     a' <- a
---     b' <- b
---     return (a' <> b')
-
-instance Semigroup Algorithm where
-  (Algorithm c1 t1 s1) <> (Algorithm c2 t2 s2) = Algorithm (c1 <> c2) (t1 <> t2) (s1 <> s2)
-
-instance Monoid Algorithm where
-  mempty = Algorithm mempty mempty mempty
-
-instance {-# OVERLAPPING #-} Semigroup (Either Text Algorithm) where
-  (Left a) <> _ = Left a
-  _ <> (Left b) = Left b
-  (Right a) <> (Right b) = Right (a <> b)
-
-instance (Monad m, Semigroup (m Algorithm)) => Monoid (m Algorithm) where
-  mempty = return mempty
-
-noTwiddleFFT :: (MonadError Text m, RealFloat a) => Int -> Array (Complex a) -> Array (Complex a) -> m Algorithm
+noTwiddleFFT :: RealFloat a => Int -> Array (Complex a) -> Array (Complex a) -> Either Text Algorithm
 noTwiddleFFT n inp out = do
   let codelet = Codelet NoTwiddle n
       f = Function (codeletName codelet) :: NoTwiddleCodelet a
   plan <- planNoTwiddle f inp out
   return $ Algorithm (S.fromList [codelet]) mempty [Expression plan]
 
-twiddleFFT :: (MonadError Text m, RealFloat a) => Int -> Array (Complex a) -> Array (Complex a) -> m Algorithm
+twiddleFFT :: RealFloat a => Int -> Array (Complex a) -> Array (Complex a) -> Either Text Algorithm
 twiddleFFT n inp twiddle = do
   let codelet = Codelet Twiddle n
       f = Function (codeletName codelet) :: TwiddleCodelet a
   plan <- planTwiddle f inp twiddle
   return $ Algorithm (S.fromList [codelet]) mempty [Expression plan]
 
--- nFactorFFT :: (MonadError Text m, RealFloat a) => [Int] -> Array (Complex a) -> Array (Complex a) -> m Algorithm
 nFactorFFT :: RealFloat a => [Int] -> Array (Complex a) -> Array (Complex a) -> Either Text Algorithm
 nFactorFFT [] _ _         = return mempty
 nFactorFFT [x] inp out    = noTwiddleFFT x inp out
 nFactorFFT (x:xs) inp out = do
-  -- | trace ("nFactorFFT " ++ show (x:xs) ++ " " ++ show inp ++ " " ++ show out) True = do
   let n = product xs
       w_array = Array (factorsName [n, x]) [n, x] (fromShape [n, x] 1) 0
       subfft i = do
-          -- | trace ("subfft " ++ show i) True = do 
           inp' <- reshape [n, x] =<< select 1 i inp
           out' <- reshape [x, n] =<< select 1 i out
           (nFactorFFT xs (transpose inp') out')
