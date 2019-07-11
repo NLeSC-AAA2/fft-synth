@@ -18,7 +18,7 @@ import TwiddleFactors
 
 main :: IO ()
 main = do
-  printFFT 15
+  printFFT 20
   putStrLn ""
   printFFT 12
 

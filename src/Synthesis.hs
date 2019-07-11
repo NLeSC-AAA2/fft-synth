@@ -91,20 +91,20 @@ twiddleFFT n inp twiddle = do
   return $ Algorithm (S.fromList [codelet]) mempty [Expression plan]
 
 nFactorFFT :: RealFloat a => [Int] -> Array (Complex a) -> Array (Complex a) -> Either Text Algorithm
-nFactorFFT [] _ _         = return mempty
-nFactorFFT [x] inp out    = noTwiddleFFT x inp out
+nFactorFFT [] _ _ = return mempty
+nFactorFFT [x] inp out = noTwiddleFFT x inp out
 nFactorFFT (x:xs) inp out = do
-  let n = product xs
-      w_array = Array (factorsName [n, x]) [n, x] (fromShape [n, x] 1) 0
-      subfft i = do
-          inp' <- reshape [n, x] =<< select 1 i inp
-          out' <- reshape [x, n] =<< select 1 i out
-          (nFactorFFT xs (transpose inp') out')
-            <> (twiddleFFT x (transpose out') w_array)
-            <> Right (defineTwiddles [n, x])
+    let n = product xs
+        w_array = Array (factorsName [n, x]) [n, x] (fromShape [n, x] 1) 0
+        subfft i = do
+            inp' <- reshape [x, n] =<< select 1 i inp
+            out' <- reshape [n, x] =<< select 1 i out
+            nFactorFFT xs (transpose inp') out'
+                <> twiddleFFT x (transpose out') w_array
+                <> Right (defineTwiddles [n, x])
 
-  l <- shape inp !? 1
-  mconcat (map subfft [0..(l-1)])
+    l <- shape inp !? 1
+    mconcat (map subfft [0..(l-1)])
 
 factors :: Int -> [Int]
 factors n = sort $ concatMap (\(i, m) -> take m $ repeat (fromIntegral i :: Int)) (factorise $ fromIntegral n)

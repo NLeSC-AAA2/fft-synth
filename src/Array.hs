@@ -65,13 +65,13 @@ rcheck what n i
 -- ------ end
 -- ------ begin <<array-methods>>[3]
 realPart :: Array (Complex a) -> Array a
-realPart array@Array{stride} = array
-    { stride = map (* 2) stride }
+realPart array@Array{stride,offset} = array
+    { stride = map (* 2) stride, offset = offset*2 }
 
 imagPart :: Array (Complex a) -> Array a
 imagPart array@Array{stride, offset} = array
     { stride = map (* 2) stride
-    , offset = offset + 1 }
+    , offset = offset*2 + 1 }
 -- ------ end
 -- ------ begin <<array-methods>>[4]
 transpose :: Array a -> Array a
