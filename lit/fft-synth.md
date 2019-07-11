@@ -339,7 +339,7 @@ defaultArgs :: GenFFTArgs
 defaultArgs = GenFFTArgs
   { compact = True
   , standalone = True
-  , opencl = True
+  , opencl = False
   , name = Nothing }
 
 optionalArg :: (ValidArg a) => Text -> Maybe a -> [Text]

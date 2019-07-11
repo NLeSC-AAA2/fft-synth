@@ -97,6 +97,8 @@ let generate n =
     if !Magic.standalone then "" else "static "
   and decl_prefix =
     if !Magic.opencl then "__global " else ""
+  and const_prefix =
+    if !Magic.opencl then "__constant " else ""
   in
 
   let body = Block (
@@ -125,7 +127,7 @@ let generate n =
 	 ename,
 	 [Decl (decl_prefix ^ C.realtypep, rioarray);
 	  Decl (decl_prefix ^ C.realtypep, iioarray);
-	  Decl ("__constant " ^ C.constrealtypep, twarray);
+	  Decl (const_prefix ^ C.constrealtypep, twarray);
 	  Decl (C.stridetype, rs);
 	  Decl ("INT", mb);
 	  Decl ("INT", me);
