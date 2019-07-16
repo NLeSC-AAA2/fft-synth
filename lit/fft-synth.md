@@ -144,7 +144,7 @@ rcheck :: MonadError Text m => Text -> Int -> Int -> m ()
 rcheck what n i
     | (i >= 0) && (i < n) = return ()
     | otherwise = throwError $ "Range check error: " <> what <> " "
-                      <> tshow n <> " " <> tshow i
+                <> tshow n <> " " <> tshow i
 ```
 
 The `rcheck` function implements a range-check on the range `0 .. (n-1)`.
@@ -235,6 +235,7 @@ module Codelet
   ( Codelet(..)
   , CodeletType(..)
   , codeletName
+  , codeletPrefix
   , NoTwiddleCodelet
   , TwiddleCodelet ) where
 
@@ -244,19 +245,20 @@ import Array
 import Data.Text (Text)
 import Lib
 
-data CodeletType = Twiddle | NoTwiddle deriving (Eq, Ord)
-
-instance Show CodeletType where
-  show Twiddle = "twiddle"
-  show NoTwiddle = "notw"
+data CodeletType = Twiddle | NoTwiddle deriving (Eq, Ord, Show)
 
 data Codelet = Codelet
   { codeletType  :: CodeletType
   , codeletRadix :: Int }
   deriving (Eq, Show, Ord)
 
+codeletPrefix :: Codelet -> Text
+codeletPrefix Codelet{..} = case codeletType of
+    Twiddle -> "twiddle"
+    NoTwiddle -> "notw"
+
 codeletName :: Codelet -> Text
-codeletName Codelet{..} = tshow codeletType <> "_" <> tshow codeletRadix
+codeletName x@Codelet{..} = codeletPrefix x <> "_" <> tshow codeletRadix
 
 type NoTwiddleCodelet a = Function
   [ Array a, Array a
@@ -282,7 +284,7 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import System.Process
 import Data.Maybe
-import Codelet (Codelet(..), codeletName)
+import Codelet (Codelet(..), codeletName, codeletPrefix)
 
 import Lib (tshow)
 
@@ -343,7 +345,7 @@ defaultArgs = GenFFTArgs
   , name = Nothing }
 
 optionalArg :: (ValidArg a) => Text -> Maybe a -> [Text]
-optionalArg opt val = fromMaybe [] (do {n <- val; return [opt, toText n]})
+optionalArg opt = maybe [] (\n -> [opt, toText n])
 
 argList :: GenFFTArgs -> [Text]
 argList GenFFTArgs{..} =
@@ -365,7 +367,7 @@ genTwiddle radix args = do
 gen :: GenFFTArgs -> Codelet -> IO Text
 gen args codelet@Codelet{..} = do
   let name' = codeletName codelet
-  genFFT (tshow codeletType) $ ["-n", tshow codeletRadix] <> argList args{name=Just name'}
+  genFFT (codeletPrefix codelet) $ ["-n", tshow codeletRadix] <> argList args{name=Just name'}
 ```
 
 ## Twiddle factors
@@ -430,7 +432,7 @@ indices :: Shape -> [[Int]]
 indices = foldr (\ n -> concatMap (\ idcs -> map (: idcs) [0 .. n-1])) [[]]
 
 makeTwiddle :: Shape -> Vector (Complex Double)
-makeTwiddle shape = V.drop (head shape) $ V.fromList $ map (multiW shape) $ indices shape
+makeTwiddle shape = V.fromList . map (multiW shape) . drop (head shape) $ indices shape
 ```
 
 ## Unit tests
@@ -484,15 +486,12 @@ Describing code structure is somewhat of a specialty of Haskell. Modern Haskell 
 We need a way to declare the list of argument types to the codelets. In standard haskell this can be done by defining a recursive data-type, but the syntax would be ugly with lots of nested type expressions. The `DataKinds` and `TypeOperators` extensions let us define a type-level list structure and express it using normal list syntax (sometimes prefixed with a quote to disambiguate with data-level lists).
 
 ``` {.haskell #ast-typelists}
-data HList :: [*] -> * where
-    Nil :: HList '[]
-    Cons :: a -> HList l -> HList (a ': l)
+data ArgList :: [*] -> * where
+    Empty :: ArgList '[]
+    (:+:) :: Expr a -> ArgList l -> ArgList (a ': l)
 
-instance Show (HList '[]) where
-    show Nil = "Nil"
-
-instance (Show a, Show (HList l)) => Show (HList (a ': l)) where
-    show (Cons x xs) = "Cons " ++ show x ++ " (" ++ show xs ++ ")"
+--deriving instance Show (ArgList '[])
+--deriving instance (Show (Expr a), Show (ArgList l)) => Show (ArgList (a ': l))
 ```
 
 ## OpenCL namespaces
@@ -539,9 +538,7 @@ data Expr a where
     VarReference   :: Variable a -> Expr a
     ArrayIndex     :: Array a -> [Expr Int] -> Expr a
     TUnit          :: Expr ()
-    TNull          :: Expr (HList '[])
-    (:+:)          :: (Show a) => Expr a -> Expr (HList b) -> Expr (HList (a ': b))
-    Apply          :: Function a b -> Expr (HList a) -> Expr b
+    Apply          :: Syntax (ArgList a) => Function a b -> ArgList a -> Expr b
 
 infixr 1 :+:
 ```
@@ -549,7 +546,9 @@ infixr 1 :+:
 The most important entries here are `(:+:)` and `Apply`. The `:+:` operator is used to construct an argument list. This argument list can then be applied to a function using `Apply`. As an example, here is the definition of `planNoTwiddle`. This function builds the AST for calling a no-twiddle FFT codelet, given an input and output array.
 
 ``` {.haskell #synth-planNoTwiddle}
-planNoTwiddle :: (MonadError Text m, RealFloat a) => NoTwiddleCodelet a -> Array (Complex a) -> Array (Complex a) -> m (Expr ())
+planNoTwiddle
+    :: (MonadError Text m, RealFloat a)
+    => NoTwiddleCodelet a -> Array (Complex a) -> Array (Complex a) -> m (Expr ())
 planNoTwiddle f inp out = do
   is  <- stride inp !? 0
   os  <- stride out !? 0
@@ -559,7 +558,7 @@ planNoTwiddle f inp out = do
   return $ Apply f (ArrayRef (realPart inp) :+: ArrayRef (imagPart inp) :+:
                     ArrayRef (realPart out) :+: ArrayRef (imagPart out) :+:
                     Literal is :+: Literal os :+: Literal v :+: Literal ivs :+:
-                    Literal ovs :+: TNull)
+                    Literal ovs :+: Empty)
 ```
 
 Note that the argument list is finalized with a `TNull`, otherwise the argument list would be improper. 
@@ -587,6 +586,13 @@ Now we can generate C/OpenCL from our AST.
 class Syntax a where
   generate :: a -> Text
 
+instance Syntax (ArgList '[]) where
+    generate _ = ""
+
+instance (Syntax (Expr a), Syntax (ArgList l)) => Syntax (ArgList (a ': l)) where
+    generate (a :+: Empty) = generate a
+    generate (a :+: b) = generate a <> ", " <> generate b
+
 instance Syntax (Expr a) where
   generate (Literal x) = tshow x
   generate (IntegerValue x) = tshow x
@@ -597,9 +603,6 @@ instance Syntax (Expr a) where
   generate (VarReference (Variable x)) = x
   generate (ArrayIndex a i) = name a <> "[<index expression>]"
   generate (Apply (Function f) a) = f <> "(" <> generate a <> ")"
-  generate (a :+: TNull) = generate a
-  generate (a :+: b) = generate a <> ", " <> generate b
-  generate TNull = ""
   generate TUnit = ""
 
 instance Syntax Stmt where
@@ -645,13 +648,16 @@ data FunctionDecl a b = FunctionDecl
 When discussing expressions in the abstract syntax tree, the definition of `planNoTwiddle` was shown. Similarly the twiddle codelet:
 
 ``` {.haskell #synth-planTwiddle}
-planTwiddle :: (MonadError Text m, RealFloat a) => TwiddleCodelet a -> Array (Complex a) -> Array (Complex a) -> m (Expr ())
+planTwiddle
+    :: (MonadError Text m, RealFloat a)
+    => TwiddleCodelet a -> Array (Complex a) -> Array (Complex a) -> m (Expr ())
 planTwiddle f inp twiddle = do
   rs  <- stride inp !? 0
   me  <- shape inp !? 1
   ms  <- stride inp !? 1
   return $ Apply f (ArrayRef (realPart inp) :+: ArrayRef (imagPart inp) :+:
-                    ArrayRef (realPart twiddle) :+: Literal rs :+: Literal 0 :+: Literal me :+: Literal ms :+: TNull)
+                    ArrayRef (realPart twiddle) :+: Literal rs :+: Literal 0 :+:
+                    Literal me :+: Literal ms :+: Empty)
 ```
 
 ## Algorithm
@@ -674,13 +680,15 @@ instance Semigroup Algorithm where
 instance Monoid Algorithm where
   mempty = Algorithm mempty mempty mempty
 
-instance {-# OVERLAPPING #-} Semigroup (Either Text Algorithm) where
-  (Left a) <> _ = Left a
-  _ <> (Left b) = Left b
-  (Right a) <> (Right b) = Right (a <> b)
+newtype HandleError a = Handle { unHandle :: Either Text a } deriving (Functor, Applicative, Monad, MonadError Text)
 
-instance Monoid (Either Text Algorithm) where
-  mempty = return mempty
+instance Semigroup a => Semigroup (HandleError a) where
+  Handle (Left a) <> _ = Handle $ Left a
+  _ <> Handle (Left b) = Handle $ Left b
+  Handle (Right a) <> Handle (Right b) = Handle $ Right (a <> b)
+
+instance Monoid a => Monoid (HandleError a) where
+  mempty = Handle $ Right mempty
 ```
 
 ## Synthesis Module
@@ -723,22 +731,28 @@ import Math.NumberTheory.Primes.Factorisation (factorise)
 defineTwiddles :: Shape -> Algorithm
 defineTwiddles shape = Algorithm mempty (S.fromList [shape]) mempty
 
-noTwiddleFFT :: RealFloat a => Int -> Array (Complex a) -> Array (Complex a) -> Either Text Algorithm
-noTwiddleFFT n inp out = do
+noTwiddleFFT
+    :: RealFloat a
+    => Int -> Array (Complex a) -> Array (Complex a) -> HandleError Algorithm
+noTwiddleFFT n inp out = Handle $ do
   let codelet = Codelet NoTwiddle n
       f = Function (codeletName codelet) :: NoTwiddleCodelet a
   plan <- planNoTwiddle f inp out
   return $ Algorithm (S.fromList [codelet]) mempty [Expression plan]
 
-twiddleFFT :: RealFloat a => Int -> Array (Complex a) -> Array (Complex a) -> Either Text Algorithm
-twiddleFFT n inp twiddle = do
+twiddleFFT
+    :: RealFloat a
+    => Int -> Array (Complex a) -> Array (Complex a) -> HandleError Algorithm
+twiddleFFT n inp twiddle = Handle $ do
   let codelet = Codelet Twiddle n
       f = Function (codeletName codelet) :: TwiddleCodelet a
   plan <- planTwiddle f inp twiddle
   return $ Algorithm (S.fromList [codelet]) mempty [Expression plan]
 
-nFactorFFT :: RealFloat a => [Int] -> Array (Complex a) -> Array (Complex a) -> Either Text Algorithm
-nFactorFFT [] _ _ = return mempty
+nFactorFFT
+    :: RealFloat a
+    => [Int] -> Array (Complex a) -> Array (Complex a) -> HandleError Algorithm
+nFactorFFT [] _ _ = mempty
 nFactorFFT [x] inp out = noTwiddleFFT x inp out
 nFactorFFT (x:xs) inp out = do
     let n = product xs
@@ -748,16 +762,16 @@ nFactorFFT (x:xs) inp out = do
             out' <- reshape [n, x] =<< select 1 i out
             nFactorFFT xs (transpose inp') out'
                 <> twiddleFFT x (transpose out') w_array
-                <> Right (defineTwiddles [n, x])
+                <> Handle (Right (defineTwiddles [n, x]))
 
     l <- shape inp !? 1
-    mconcat (map subfft [0..(l-1)])
+    foldMap subfft [0..(l-1)]
 
 factors :: Int -> [Int]
 factors n = sort $ concatMap (\(i, m) -> take m $ repeat (fromIntegral i :: Int)) (factorise $ fromIntegral n)
 
 fullFactorFFT :: RealFloat a => Int -> Array (Complex a) -> Array (Complex a) -> Either Text Algorithm
-fullFactorFFT n = nFactorFFT (factors n)
+fullFactorFFT n x y = unHandle $ nFactorFFT (factors n) x y
 ```
 
 # Appendix: Miscellaneous functions

@@ -24,7 +24,7 @@ indices :: Shape -> [[Int]]
 indices = foldr (\ n -> concatMap (\ idcs -> map (: idcs) [0 .. n-1])) [[]]
 
 makeTwiddle :: Shape -> Vector (Complex Double)
-makeTwiddle shape = V.drop (head shape) $ V.fromList $ map (multiW shape) $ indices shape
+makeTwiddle shape = V.fromList . map (multiW shape) . drop (head shape) $ indices shape
 -- ------ end
 
 factorsName :: Shape -> Text

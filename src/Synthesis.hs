@@ -30,7 +30,9 @@ import Math.NumberTheory.Primes.Factorisation (factorise)
   | otherwise = xs !? (i - 1)
 
 -- ------ begin <<synth-planNoTwiddle>>[0]
-planNoTwiddle :: (MonadError Text m, RealFloat a) => NoTwiddleCodelet a -> Array (Complex a) -> Array (Complex a) -> m (Expr ())
+planNoTwiddle
+    :: (MonadError Text m, RealFloat a)
+    => NoTwiddleCodelet a -> Array (Complex a) -> Array (Complex a) -> m (Expr ())
 planNoTwiddle f inp out = do
   is  <- stride inp !? 0
   os  <- stride out !? 0
@@ -40,16 +42,19 @@ planNoTwiddle f inp out = do
   return $ Apply f (ArrayRef (realPart inp) :+: ArrayRef (imagPart inp) :+:
                     ArrayRef (realPart out) :+: ArrayRef (imagPart out) :+:
                     Literal is :+: Literal os :+: Literal v :+: Literal ivs :+:
-                    Literal ovs :+: TNull)
+                    Literal ovs :+: Empty)
 -- ------ end
 -- ------ begin <<synth-planTwiddle>>[0]
-planTwiddle :: (MonadError Text m, RealFloat a) => TwiddleCodelet a -> Array (Complex a) -> Array (Complex a) -> m (Expr ())
+planTwiddle
+    :: (MonadError Text m, RealFloat a)
+    => TwiddleCodelet a -> Array (Complex a) -> Array (Complex a) -> m (Expr ())
 planTwiddle f inp twiddle = do
   rs  <- stride inp !? 0
   me  <- shape inp !? 1
   ms  <- stride inp !? 1
   return $ Apply f (ArrayRef (realPart inp) :+: ArrayRef (imagPart inp) :+:
-                    ArrayRef (realPart twiddle) :+: Literal rs :+: Literal 0 :+: Literal me :+: Literal ms :+: TNull)
+                    ArrayRef (realPart twiddle) :+: Literal rs :+: Literal 0 :+:
+                    Literal me :+: Literal ms :+: Empty)
 -- ------ end
 -- ------ begin <<synth-algorithm>>[0]
 data Algorithm = Algorithm
@@ -64,34 +69,42 @@ instance Semigroup Algorithm where
 instance Monoid Algorithm where
   mempty = Algorithm mempty mempty mempty
 
-instance {-# OVERLAPPING #-} Semigroup (Either Text Algorithm) where
-  (Left a) <> _ = Left a
-  _ <> (Left b) = Left b
-  (Right a) <> (Right b) = Right (a <> b)
+newtype HandleError a = Handle { unHandle :: Either Text a } deriving (Functor, Applicative, Monad, MonadError Text)
 
-instance Monoid (Either Text Algorithm) where
-  mempty = return mempty
+instance Semigroup a => Semigroup (HandleError a) where
+  Handle (Left a) <> _ = Handle $ Left a
+  _ <> Handle (Left b) = Handle $ Left b
+  Handle (Right a) <> Handle (Right b) = Handle $ Right (a <> b)
+
+instance Monoid a => Monoid (HandleError a) where
+  mempty = Handle $ Right mempty
 -- ------ end
 
 defineTwiddles :: Shape -> Algorithm
 defineTwiddles shape = Algorithm mempty (S.fromList [shape]) mempty
 
-noTwiddleFFT :: RealFloat a => Int -> Array (Complex a) -> Array (Complex a) -> Either Text Algorithm
-noTwiddleFFT n inp out = do
+noTwiddleFFT
+    :: RealFloat a
+    => Int -> Array (Complex a) -> Array (Complex a) -> HandleError Algorithm
+noTwiddleFFT n inp out = Handle $ do
   let codelet = Codelet NoTwiddle n
       f = Function (codeletName codelet) :: NoTwiddleCodelet a
   plan <- planNoTwiddle f inp out
   return $ Algorithm (S.fromList [codelet]) mempty [Expression plan]
 
-twiddleFFT :: RealFloat a => Int -> Array (Complex a) -> Array (Complex a) -> Either Text Algorithm
-twiddleFFT n inp twiddle = do
+twiddleFFT
+    :: RealFloat a
+    => Int -> Array (Complex a) -> Array (Complex a) -> HandleError Algorithm
+twiddleFFT n inp twiddle = Handle $ do
   let codelet = Codelet Twiddle n
       f = Function (codeletName codelet) :: TwiddleCodelet a
   plan <- planTwiddle f inp twiddle
   return $ Algorithm (S.fromList [codelet]) mempty [Expression plan]
 
-nFactorFFT :: RealFloat a => [Int] -> Array (Complex a) -> Array (Complex a) -> Either Text Algorithm
-nFactorFFT [] _ _ = return mempty
+nFactorFFT
+    :: RealFloat a
+    => [Int] -> Array (Complex a) -> Array (Complex a) -> HandleError Algorithm
+nFactorFFT [] _ _ = mempty
 nFactorFFT [x] inp out = noTwiddleFFT x inp out
 nFactorFFT (x:xs) inp out = do
     let n = product xs
@@ -101,14 +114,14 @@ nFactorFFT (x:xs) inp out = do
             out' <- reshape [n, x] =<< select 1 i out
             nFactorFFT xs (transpose inp') out'
                 <> twiddleFFT x (transpose out') w_array
-                <> Right (defineTwiddles [n, x])
+                <> Handle (Right (defineTwiddles [n, x]))
 
     l <- shape inp !? 1
-    mconcat (map subfft [0..(l-1)])
+    foldMap subfft [0..(l-1)]
 
 factors :: Int -> [Int]
 factors n = sort $ concatMap (\(i, m) -> take m $ repeat (fromIntegral i :: Int)) (factorise $ fromIntegral n)
 
 fullFactorFFT :: RealFloat a => Int -> Array (Complex a) -> Array (Complex a) -> Either Text Algorithm
-fullFactorFFT n = nFactorFFT (factors n)
+fullFactorFFT n x y = unHandle $ nFactorFFT (factors n) x y
 -- ------ end

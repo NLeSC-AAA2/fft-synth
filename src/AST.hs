@@ -36,15 +36,12 @@ instance Declarable a => Declarable (Pointer a) where
   typename _ = typename (Proxy :: Proxy a) <> "*"
 -- ------ end
 -- ------ begin <<ast-typelists>>[0]
-data HList :: [*] -> * where
-    Nil :: HList '[]
-    Cons :: a -> HList l -> HList (a ': l)
+data ArgList :: [*] -> * where
+    Empty :: ArgList '[]
+    (:+:) :: Expr a -> ArgList l -> ArgList (a ': l)
 
-instance Show (HList '[]) where
-    show Nil = "Nil"
-
-instance (Show a, Show (HList l)) => Show (HList (a ': l)) where
-    show (Cons x xs) = "Cons " ++ show x ++ " (" ++ show xs ++ ")"
+--deriving instance Show (ArgList '[])
+--deriving instance (Show (Expr a), Show (ArgList l)) => Show (ArgList (a ': l))
 -- ------ end
 -- ------ begin <<ast-expression>>[0]
 data Expr a where
@@ -55,9 +52,7 @@ data Expr a where
     VarReference   :: Variable a -> Expr a
     ArrayIndex     :: Array a -> [Expr Int] -> Expr a
     TUnit          :: Expr ()
-    TNull          :: Expr (HList '[])
-    (:+:)          :: (Show a) => Expr a -> Expr (HList b) -> Expr (HList (a ': b))
-    Apply          :: Function a b -> Expr (HList a) -> Expr b
+    Apply          :: Syntax (ArgList a) => Function a b -> ArgList a -> Expr b
 
 infixr 1 :+:
 -- ------ end
@@ -85,6 +80,13 @@ data FunctionDecl a b = FunctionDecl
 class Syntax a where
   generate :: a -> Text
 
+instance Syntax (ArgList '[]) where
+    generate _ = ""
+
+instance (Syntax (Expr a), Syntax (ArgList l)) => Syntax (ArgList (a ': l)) where
+    generate (a :+: Empty) = generate a
+    generate (a :+: b) = generate a <> ", " <> generate b
+    
 instance Syntax (Expr a) where
   generate (Literal x) = tshow x
   generate (IntegerValue x) = tshow x
@@ -95,9 +97,6 @@ instance Syntax (Expr a) where
   generate (VarReference (Variable x)) = x
   generate (ArrayIndex a i) = name a <> "[<index expression>]"
   generate (Apply (Function f) a) = f <> "(" <> generate a <> ")"
-  generate (a :+: TNull) = generate a
-  generate (a :+: b) = generate a <> ", " <> generate b
-  generate TNull = ""
   generate TUnit = ""
 
 instance Syntax Stmt where

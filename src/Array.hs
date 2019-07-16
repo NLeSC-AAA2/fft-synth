@@ -61,7 +61,7 @@ rcheck :: MonadError Text m => Text -> Int -> Int -> m ()
 rcheck what n i
     | (i >= 0) && (i < n) = return ()
     | otherwise = throwError $ "Range check error: " <> what <> " "
-                      <> tshow n <> " " <> tshow i
+                <> tshow n <> " " <> tshow i
 -- ------ end
 -- ------ begin <<array-methods>>[3]
 realPart :: Array (Complex a) -> Array a

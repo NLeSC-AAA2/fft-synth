@@ -6,6 +6,7 @@ module Codelet
   ( Codelet(..)
   , CodeletType(..)
   , codeletName
+  , codeletPrefix
   , NoTwiddleCodelet
   , TwiddleCodelet ) where
 
@@ -15,19 +16,20 @@ import Array
 import Data.Text (Text)
 import Lib
 
-data CodeletType = Twiddle | NoTwiddle deriving (Eq, Ord)
-
-instance Show CodeletType where
-  show Twiddle = "twiddle"
-  show NoTwiddle = "notw"
+data CodeletType = Twiddle | NoTwiddle deriving (Eq, Ord, Show)
 
 data Codelet = Codelet
   { codeletType  :: CodeletType
   , codeletRadix :: Int }
   deriving (Eq, Show, Ord)
 
+codeletPrefix :: Codelet -> Text
+codeletPrefix Codelet{..} = case codeletType of
+    Twiddle -> "twiddle"
+    NoTwiddle -> "notw"
+
 codeletName :: Codelet -> Text
-codeletName Codelet{..} = tshow codeletType <> "_" <> tshow codeletRadix
+codeletName x@Codelet{..} = codeletPrefix x <> "_" <> tshow codeletRadix
 
 type NoTwiddleCodelet a = Function
   [ Array a, Array a
