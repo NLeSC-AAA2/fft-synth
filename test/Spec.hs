@@ -22,8 +22,16 @@ instance Approx Float where
 instance Approx Double where
     closeTo a b = abs (a - b) < 1e-10
 
-instance (Approx a, Applicative m, Foldable m) => Approx (m a) where
-    closeTo x y = and $ liftA2 closeTo x y
+instance Approx a => Approx (Complex a) where
+    closeTo (a :+ b) (c :+ d) = a `closeTo` c && b `closeTo` d
+
+instance Approx a => Approx [a] where
+    closeTo [] [] = True
+    closeTo (a:as) (b:bs) = a `closeTo` b && as `closeTo` bs
+    closeTo _ _ = False
+
+-- instance (Approx a, Applicative m, Foldable m) => Approx (m a) where
+--    closeTo x y = and $ liftA2 closeTo x y
 
 instance {-# OVERLAPPING #-} (Approx a, V.Unbox a) => Approx (Vector a) where
     closeTo x y = V.and $ V.zipWith closeTo x y
@@ -36,13 +44,13 @@ testTwiddleFactors = do
         it "creates an index list" $ do
             indices [2, 2] `shouldBe` [[0, 0], [1, 0], [0, 1], [1, 1]]
             indices [3, 1] `shouldBe` [[0, 0], [1, 0], [2, 0]]
-    
+
     describe "TwiddleFactors.makeTwiddle" $
         it "Generates twiddle factors" $ do
             makeTwiddle [2, 2] `shouldSatisfy` closeTo
-                (V.fromList [ 1.0, 1.0, 1.0, 0.0 :+ 1.0 ])
+                (V.fromList [ 1.0, 0.0 :+ 1.0 ])
             makeTwiddle [4] `shouldSatisfy` closeTo
-                (V.fromList [ 1.0, 0.0 :+ 1.0, -1.0, 0.0 :+ (-1.0) ])
+                (V.fromList [ 0.0 :+ 1.0, -1.0, 0.0 :+ (-1.0) ])
     -- ------ end
 
 main :: IO ()
@@ -70,8 +78,8 @@ main = hspec $ do
     let a1 = floatArray "test" [4, 5]
     describe "Strides.select" $
         it "selects sub-array" $ do
-            let a103 = select a1 0 3
-            let a112 = select a1 1 2
+            let a103 = select 0 3 a1
+            let a112 = select 1 2 a1
             (shape <$> a103) `shouldBe` Right [5]
             (stride <$> a103) `shouldBe` Right [4]
             (offset <$> a103) `shouldBe` Right 3

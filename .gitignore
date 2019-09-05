@@ -1,6 +1,6 @@
 .stack-work/
 stack.yaml.lock
-fft-synth.cabal
+.ghc.environment.*
 *~
 *.swp
 .#*

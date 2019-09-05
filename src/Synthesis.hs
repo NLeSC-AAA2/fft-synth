@@ -32,7 +32,8 @@ import Math.NumberTheory.Primes.Factorisation (factorise)
 -- ------ begin <<synth-planNoTwiddle>>[0]
 planNoTwiddle
     :: (MonadError Text m, RealFloat a)
-    => NoTwiddleCodelet a -> Array (Complex a) -> Array (Complex a) -> m (Expr ())
+    => NoTwiddleCodelet a -> Array (Complex a) -> Array (Complex a)
+    -> m (Expr ())
 planNoTwiddle f inp out = do
   is  <- stride inp !? 0
   os  <- stride out !? 0
@@ -47,7 +48,8 @@ planNoTwiddle f inp out = do
 -- ------ begin <<synth-planTwiddle>>[0]
 planTwiddle
     :: (MonadError Text m, RealFloat a)
-    => TwiddleCodelet a -> Array (Complex a) -> Array (Complex a) -> m (Expr ())
+    => TwiddleCodelet a -> Array (Complex a) -> Array (Complex a)
+    -> m (Expr ())
 planTwiddle f inp twiddle = do
   rs  <- stride inp !? 0
   me  <- shape inp !? 1
@@ -69,7 +71,8 @@ instance Semigroup Algorithm where
 instance Monoid Algorithm where
   mempty = Algorithm mempty mempty mempty
 
-newtype HandleError a = Handle { unHandle :: Either Text a } deriving (Functor, Applicative, Monad, MonadError Text)
+newtype HandleError a = Handle { unHandle :: Either Text a }
+    deriving (Functor, Applicative, Monad, MonadError Text)
 
 instance Semigroup a => Semigroup (HandleError a) where
   Handle (Left a) <> _ = Handle $ Left a
@@ -120,7 +123,9 @@ nFactorFFT (x:xs) inp out = do
     foldMap subfft [0..(l-1)]
 
 factors :: Int -> [Int]
-factors n = sort $ concatMap (\(i, m) -> take m $ repeat (fromIntegral i :: Int)) (factorise $ fromIntegral n)
+factors n = sort $ concatMap expandFactors (factorise $ fromIntegral n)
+    where expandFactors (prime, m) = take (fromIntegral m)
+                                   $ repeat (fromIntegral prime :: Int)
 
 fullFactorFFT :: RealFloat a => Int -> Array (Complex a) -> Array (Complex a) -> Either Text Algorithm
 fullFactorFFT n x y = unHandle $ nFactorFFT (factors n) x y

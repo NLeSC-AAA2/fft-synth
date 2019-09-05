@@ -225,7 +225,7 @@ slice dim a b step array@Array{shape,stride,offset} = do
 
 # Codelets and Twiddles
 ## Codelets
-A codelet, for the moment, is just some function that we can call.
+Codelets are represented by an abstract data type. Each codelet gets a name refering to the type and radix of the FFT, for instance: "twiddle_5", "notw_24", etc.
 
 ``` {.haskell file=src/Codelet.hs}
 {-# LANGUAGE RecordWildCards #-}
@@ -432,7 +432,7 @@ indices :: Shape -> [[Int]]
 indices = foldr (\ n -> concatMap (\ idcs -> map (: idcs) [0 .. n-1])) [[]]
 
 makeTwiddle :: Shape -> Vector (Complex Double)
-makeTwiddle shape = V.fromList . map (multiW shape) . drop (head shape) $ indices shape
+makeTwiddle shape = V.fromList $ map (multiW shape) $ drop (head shape) $ indices shape
 ```
 
 ## Unit tests
@@ -447,8 +447,16 @@ instance Approx Float where
 instance Approx Double where
     closeTo a b = abs (a - b) < 1e-10
 
-instance (Approx a, Applicative m, Foldable m) => Approx (m a) where
-    closeTo x y = and $ liftA2 closeTo x y
+instance Approx a => Approx (Complex a) where
+    closeTo (a :+ b) (c :+ d) = a `closeTo` c && b `closeTo` d
+
+instance Approx a => Approx [a] where
+    closeTo [] [] = True
+    closeTo (a:as) (b:bs) = a `closeTo` b && as `closeTo` bs
+    closeTo _ _ = False
+
+-- instance (Approx a, Applicative m, Foldable m) => Approx (m a) where
+--    closeTo x y = and $ liftA2 closeTo x y
 
 instance {-# OVERLAPPING #-} (Approx a, V.Unbox a) => Approx (Vector a) where
     closeTo x y = V.and $ V.zipWith closeTo x y
@@ -463,9 +471,9 @@ describe "TwiddleFactors.indices" $
 describe "TwiddleFactors.makeTwiddle" $
     it "Generates twiddle factors" $ do
         makeTwiddle [2, 2] `shouldSatisfy` closeTo
-            (V.fromList [ 1.0, 1.0, 1.0, 0.0 :+ 1.0 ])
+            (V.fromList [ 1.0, 0.0 :+ 1.0 ])
         makeTwiddle [4] `shouldSatisfy` closeTo
-            (V.fromList [ 1.0, 0.0 :+ 1.0, -1.0, 0.0 :+ (-1.0) ])
+            (V.fromList [ 0.0 :+ 1.0, -1.0, 0.0 :+ (-1.0) ])
 ```
 
 # Abstract Syntax Tree
@@ -548,7 +556,8 @@ The most important entries here are `(:+:)` and `Apply`. The `:+:` operator is u
 ``` {.haskell #synth-planNoTwiddle}
 planNoTwiddle
     :: (MonadError Text m, RealFloat a)
-    => NoTwiddleCodelet a -> Array (Complex a) -> Array (Complex a) -> m (Expr ())
+    => NoTwiddleCodelet a -> Array (Complex a) -> Array (Complex a)
+    -> m (Expr ())
 planNoTwiddle f inp out = do
   is  <- stride inp !? 0
   os  <- stride out !? 0
@@ -650,7 +659,8 @@ When discussing expressions in the abstract syntax tree, the definition of `plan
 ``` {.haskell #synth-planTwiddle}
 planTwiddle
     :: (MonadError Text m, RealFloat a)
-    => TwiddleCodelet a -> Array (Complex a) -> Array (Complex a) -> m (Expr ())
+    => TwiddleCodelet a -> Array (Complex a) -> Array (Complex a)
+    -> m (Expr ())
 planTwiddle f inp twiddle = do
   rs  <- stride inp !? 0
   me  <- shape inp !? 1
@@ -680,7 +690,8 @@ instance Semigroup Algorithm where
 instance Monoid Algorithm where
   mempty = Algorithm mempty mempty mempty
 
-newtype HandleError a = Handle { unHandle :: Either Text a } deriving (Functor, Applicative, Monad, MonadError Text)
+newtype HandleError a = Handle { unHandle :: Either Text a }
+    deriving (Functor, Applicative, Monad, MonadError Text)
 
 instance Semigroup a => Semigroup (HandleError a) where
   Handle (Left a) <> _ = Handle $ Left a
@@ -768,7 +779,9 @@ nFactorFFT (x:xs) inp out = do
     foldMap subfft [0..(l-1)]
 
 factors :: Int -> [Int]
-factors n = sort $ concatMap (\(i, m) -> take m $ repeat (fromIntegral i :: Int)) (factorise $ fromIntegral n)
+factors n = sort $ concatMap expandFactors (factorise $ fromIntegral n)
+    where expandFactors (prime, m) = take (fromIntegral m)
+                                   $ repeat (fromIntegral prime :: Int)
 
 fullFactorFFT :: RealFloat a => Int -> Array (Complex a) -> Array (Complex a) -> Either Text Algorithm
 fullFactorFFT n x y = unHandle $ nFactorFFT (factors n) x y
@@ -859,8 +872,8 @@ main = hspec $ do
     let a1 = floatArray "test" [4, 5]
     describe "Strides.select" $
         it "selects sub-array" $ do
-            let a103 = select a1 0 3
-            let a112 = select a1 1 2
+            let a103 = select 0 3 a1
+            let a112 = select 1 2 a1
             (shape <$> a103) `shouldBe` Right [5]
             (stride <$> a103) `shouldBe` Right [4]
             (offset <$> a103) `shouldBe` Right 3

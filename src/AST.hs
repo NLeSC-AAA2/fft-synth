@@ -86,7 +86,7 @@ instance Syntax (ArgList '[]) where
 instance (Syntax (Expr a), Syntax (ArgList l)) => Syntax (ArgList (a ': l)) where
     generate (a :+: Empty) = generate a
     generate (a :+: b) = generate a <> ", " <> generate b
-    
+
 instance Syntax (Expr a) where
   generate (Literal x) = tshow x
   generate (IntegerValue x) = tshow x

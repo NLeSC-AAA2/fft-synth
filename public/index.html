@@ -12,19 +12,18 @@
       div.column{display: inline-block; vertical-align: top; width: 50%;}
   </style>
   <style>
-code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
 code.sourceCode > span { color: inherit; text-decoration: inherit; }
-code.sourceCode > span:empty { height: 1.2em; }
-.sourceCode { overflow: visible; }
-code.sourceCode { white-space: pre; position: relative; }
 div.sourceCode { margin: 1em 0; }
 pre.sourceCode { margin: 0; }
 @media screen {
 div.sourceCode { overflow: auto; }
 }
 @media print {
-code.sourceCode { white-space: pre-wrap; }
-code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
 }
 pre.numberSource code
   { counter-reset: source-line 0; }
@@ -44,7 +43,7 @@ pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-le
 div.sourceCode
   {   }
 @media screen {
-code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
 }
 code span.al { color: #ff0000; font-weight: bold; } /* Alert */
 code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } /* Annotation */
@@ -574,17 +573,18 @@ code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warni
 <p><em>«synth-planNoTwiddle»=</em></p>
 <div class="sourceCode" id="synth-planNoTwiddle"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="synth-planNoTwiddle-1"><a href="#synth-planNoTwiddle-1"></a>planNoTwiddle</span>
 <span id="synth-planNoTwiddle-2"><a href="#synth-planNoTwiddle-2"></a><span class="ot">    ::</span> (<span class="dt">MonadError</span> <span class="dt">Text</span> m, <span class="dt">RealFloat</span> a)</span>
-<span id="synth-planNoTwiddle-3"><a href="#synth-planNoTwiddle-3"></a>    <span class="ot">=&gt;</span> <span class="dt">NoTwiddleCodelet</span> a <span class="ot">-&gt;</span> <span class="dt">Array</span> (<span class="dt">Complex</span> a) <span class="ot">-&gt;</span> <span class="dt">Array</span> (<span class="dt">Complex</span> a) <span class="ot">-&gt;</span> m (<span class="dt">Expr</span> ())</span>
-<span id="synth-planNoTwiddle-4"><a href="#synth-planNoTwiddle-4"></a>planNoTwiddle f inp out <span class="ot">=</span> <span class="kw">do</span></span>
-<span id="synth-planNoTwiddle-5"><a href="#synth-planNoTwiddle-5"></a>  is  <span class="ot">&lt;-</span> stride inp <span class="op">!?</span> <span class="dv">0</span></span>
-<span id="synth-planNoTwiddle-6"><a href="#synth-planNoTwiddle-6"></a>  os  <span class="ot">&lt;-</span> stride out <span class="op">!?</span> <span class="dv">0</span></span>
-<span id="synth-planNoTwiddle-7"><a href="#synth-planNoTwiddle-7"></a>  v   <span class="ot">&lt;-</span> shape inp <span class="op">!?</span> <span class="dv">1</span></span>
-<span id="synth-planNoTwiddle-8"><a href="#synth-planNoTwiddle-8"></a>  ivs <span class="ot">&lt;-</span> stride inp <span class="op">!?</span> <span class="dv">1</span></span>
-<span id="synth-planNoTwiddle-9"><a href="#synth-planNoTwiddle-9"></a>  ovs <span class="ot">&lt;-</span> stride out <span class="op">!?</span> <span class="dv">1</span></span>
-<span id="synth-planNoTwiddle-10"><a href="#synth-planNoTwiddle-10"></a>  <span class="fu">return</span> <span class="op">$</span> <span class="dt">Apply</span> f (<span class="dt">ArrayRef</span> (realPart inp) <span class="op">:+:</span> <span class="dt">ArrayRef</span> (imagPart inp) <span class="op">:+:</span></span>
-<span id="synth-planNoTwiddle-11"><a href="#synth-planNoTwiddle-11"></a>                    <span class="dt">ArrayRef</span> (realPart out) <span class="op">:+:</span> <span class="dt">ArrayRef</span> (imagPart out) <span class="op">:+:</span></span>
-<span id="synth-planNoTwiddle-12"><a href="#synth-planNoTwiddle-12"></a>                    <span class="dt">Literal</span> is <span class="op">:+:</span> <span class="dt">Literal</span> os <span class="op">:+:</span> <span class="dt">Literal</span> v <span class="op">:+:</span> <span class="dt">Literal</span> ivs <span class="op">:+:</span></span>
-<span id="synth-planNoTwiddle-13"><a href="#synth-planNoTwiddle-13"></a>                    <span class="dt">Literal</span> ovs <span class="op">:+:</span> <span class="dt">Empty</span>)</span></code></pre></div>
+<span id="synth-planNoTwiddle-3"><a href="#synth-planNoTwiddle-3"></a>    <span class="ot">=&gt;</span> <span class="dt">NoTwiddleCodelet</span> a <span class="ot">-&gt;</span> <span class="dt">Array</span> (<span class="dt">Complex</span> a) <span class="ot">-&gt;</span> <span class="dt">Array</span> (<span class="dt">Complex</span> a)</span>
+<span id="synth-planNoTwiddle-4"><a href="#synth-planNoTwiddle-4"></a>    <span class="ot">-&gt;</span> m (<span class="dt">Expr</span> ())</span>
+<span id="synth-planNoTwiddle-5"><a href="#synth-planNoTwiddle-5"></a>planNoTwiddle f inp out <span class="ot">=</span> <span class="kw">do</span></span>
+<span id="synth-planNoTwiddle-6"><a href="#synth-planNoTwiddle-6"></a>  is  <span class="ot">&lt;-</span> stride inp <span class="op">!?</span> <span class="dv">0</span></span>
+<span id="synth-planNoTwiddle-7"><a href="#synth-planNoTwiddle-7"></a>  os  <span class="ot">&lt;-</span> stride out <span class="op">!?</span> <span class="dv">0</span></span>
+<span id="synth-planNoTwiddle-8"><a href="#synth-planNoTwiddle-8"></a>  v   <span class="ot">&lt;-</span> shape inp <span class="op">!?</span> <span class="dv">1</span></span>
+<span id="synth-planNoTwiddle-9"><a href="#synth-planNoTwiddle-9"></a>  ivs <span class="ot">&lt;-</span> stride inp <span class="op">!?</span> <span class="dv">1</span></span>
+<span id="synth-planNoTwiddle-10"><a href="#synth-planNoTwiddle-10"></a>  ovs <span class="ot">&lt;-</span> stride out <span class="op">!?</span> <span class="dv">1</span></span>
+<span id="synth-planNoTwiddle-11"><a href="#synth-planNoTwiddle-11"></a>  <span class="fu">return</span> <span class="op">$</span> <span class="dt">Apply</span> f (<span class="dt">ArrayRef</span> (realPart inp) <span class="op">:+:</span> <span class="dt">ArrayRef</span> (imagPart inp) <span class="op">:+:</span></span>
+<span id="synth-planNoTwiddle-12"><a href="#synth-planNoTwiddle-12"></a>                    <span class="dt">ArrayRef</span> (realPart out) <span class="op">:+:</span> <span class="dt">ArrayRef</span> (imagPart out) <span class="op">:+:</span></span>
+<span id="synth-planNoTwiddle-13"><a href="#synth-planNoTwiddle-13"></a>                    <span class="dt">Literal</span> is <span class="op">:+:</span> <span class="dt">Literal</span> os <span class="op">:+:</span> <span class="dt">Literal</span> v <span class="op">:+:</span> <span class="dt">Literal</span> ivs <span class="op">:+:</span></span>
+<span id="synth-planNoTwiddle-14"><a href="#synth-planNoTwiddle-14"></a>                    <span class="dt">Literal</span> ovs <span class="op">:+:</span> <span class="dt">Empty</span>)</span></code></pre></div>
 <p>Note that the argument list is finalized with a <code>TNull</code>, otherwise the argument list would be improper.</p>
 <p><em>«ast-statements»=</em></p>
 <div class="sourceCode" id="ast-statements"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="ast-statements-1"><a href="#ast-statements-1"></a><span class="kw">data</span> <span class="dt">Range</span> <span class="ot">=</span> <span class="dt">Range</span></span>
@@ -662,14 +662,15 @@ code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warni
 <p><em>«synth-planTwiddle»=</em></p>
 <div class="sourceCode" id="synth-planTwiddle"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="synth-planTwiddle-1"><a href="#synth-planTwiddle-1"></a>planTwiddle</span>
 <span id="synth-planTwiddle-2"><a href="#synth-planTwiddle-2"></a><span class="ot">    ::</span> (<span class="dt">MonadError</span> <span class="dt">Text</span> m, <span class="dt">RealFloat</span> a)</span>
-<span id="synth-planTwiddle-3"><a href="#synth-planTwiddle-3"></a>    <span class="ot">=&gt;</span> <span class="dt">TwiddleCodelet</span> a <span class="ot">-&gt;</span> <span class="dt">Array</span> (<span class="dt">Complex</span> a) <span class="ot">-&gt;</span> <span class="dt">Array</span> (<span class="dt">Complex</span> a) <span class="ot">-&gt;</span> m (<span class="dt">Expr</span> ())</span>
-<span id="synth-planTwiddle-4"><a href="#synth-planTwiddle-4"></a>planTwiddle f inp twiddle <span class="ot">=</span> <span class="kw">do</span></span>
-<span id="synth-planTwiddle-5"><a href="#synth-planTwiddle-5"></a>  rs  <span class="ot">&lt;-</span> stride inp <span class="op">!?</span> <span class="dv">0</span></span>
-<span id="synth-planTwiddle-6"><a href="#synth-planTwiddle-6"></a>  me  <span class="ot">&lt;-</span> shape inp <span class="op">!?</span> <span class="dv">1</span></span>
-<span id="synth-planTwiddle-7"><a href="#synth-planTwiddle-7"></a>  ms  <span class="ot">&lt;-</span> stride inp <span class="op">!?</span> <span class="dv">1</span></span>
-<span id="synth-planTwiddle-8"><a href="#synth-planTwiddle-8"></a>  <span class="fu">return</span> <span class="op">$</span> <span class="dt">Apply</span> f (<span class="dt">ArrayRef</span> (realPart inp) <span class="op">:+:</span> <span class="dt">ArrayRef</span> (imagPart inp) <span class="op">:+:</span></span>
-<span id="synth-planTwiddle-9"><a href="#synth-planTwiddle-9"></a>                    <span class="dt">ArrayRef</span> (realPart twiddle) <span class="op">:+:</span> <span class="dt">Literal</span> rs <span class="op">:+:</span> <span class="dt">Literal</span> <span class="dv">0</span> <span class="op">:+:</span></span>
-<span id="synth-planTwiddle-10"><a href="#synth-planTwiddle-10"></a>                    <span class="dt">Literal</span> me <span class="op">:+:</span> <span class="dt">Literal</span> ms <span class="op">:+:</span> <span class="dt">Empty</span>)</span></code></pre></div>
+<span id="synth-planTwiddle-3"><a href="#synth-planTwiddle-3"></a>    <span class="ot">=&gt;</span> <span class="dt">TwiddleCodelet</span> a <span class="ot">-&gt;</span> <span class="dt">Array</span> (<span class="dt">Complex</span> a) <span class="ot">-&gt;</span> <span class="dt">Array</span> (<span class="dt">Complex</span> a)</span>
+<span id="synth-planTwiddle-4"><a href="#synth-planTwiddle-4"></a>    <span class="ot">-&gt;</span> m (<span class="dt">Expr</span> ())</span>
+<span id="synth-planTwiddle-5"><a href="#synth-planTwiddle-5"></a>planTwiddle f inp twiddle <span class="ot">=</span> <span class="kw">do</span></span>
+<span id="synth-planTwiddle-6"><a href="#synth-planTwiddle-6"></a>  rs  <span class="ot">&lt;-</span> stride inp <span class="op">!?</span> <span class="dv">0</span></span>
+<span id="synth-planTwiddle-7"><a href="#synth-planTwiddle-7"></a>  me  <span class="ot">&lt;-</span> shape inp <span class="op">!?</span> <span class="dv">1</span></span>
+<span id="synth-planTwiddle-8"><a href="#synth-planTwiddle-8"></a>  ms  <span class="ot">&lt;-</span> stride inp <span class="op">!?</span> <span class="dv">1</span></span>
+<span id="synth-planTwiddle-9"><a href="#synth-planTwiddle-9"></a>  <span class="fu">return</span> <span class="op">$</span> <span class="dt">Apply</span> f (<span class="dt">ArrayRef</span> (realPart inp) <span class="op">:+:</span> <span class="dt">ArrayRef</span> (imagPart inp) <span class="op">:+:</span></span>
+<span id="synth-planTwiddle-10"><a href="#synth-planTwiddle-10"></a>                    <span class="dt">ArrayRef</span> (realPart twiddle) <span class="op">:+:</span> <span class="dt">Literal</span> rs <span class="op">:+:</span> <span class="dt">Literal</span> <span class="dv">0</span> <span class="op">:+:</span></span>
+<span id="synth-planTwiddle-11"><a href="#synth-planTwiddle-11"></a>                    <span class="dt">Literal</span> me <span class="op">:+:</span> <span class="dt">Literal</span> ms <span class="op">:+:</span> <span class="dt">Empty</span>)</span></code></pre></div>
 <h3 id="algorithm">Algorithm</h3>
 <p>An FFT algorithm now is a collection of codelets, twiddle factors and a list of statements defining how to synthesise the larger FFT.</p>
 <p><em>«synth-algorithm»=</em></p>
@@ -685,13 +686,16 @@ code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warni
 <span id="synth-algorithm-4"><a href="#synth-algorithm-4"></a><span class="kw">instance</span> <span class="dt">Monoid</span> <span class="dt">Algorithm</span> <span class="kw">where</span></span>
 <span id="synth-algorithm-5"><a href="#synth-algorithm-5"></a>  <span class="fu">mempty</span> <span class="ot">=</span> <span class="dt">Algorithm</span> <span class="fu">mempty</span> <span class="fu">mempty</span> <span class="fu">mempty</span></span>
 <span id="synth-algorithm-6"><a href="#synth-algorithm-6"></a></span>
-<span id="synth-algorithm-7"><a href="#synth-algorithm-7"></a><span class="kw">instance</span> <span class="ot">{-# OVERLAPPING #-}</span> <span class="dt">Semigroup</span> (<span class="dt">Either</span> <span class="dt">Text</span> <span class="dt">Algorithm</span>) <span class="kw">where</span></span>
-<span id="synth-algorithm-8"><a href="#synth-algorithm-8"></a>  (<span class="dt">Left</span> a) <span class="op">&lt;&gt;</span> _ <span class="ot">=</span> <span class="dt">Left</span> a</span>
-<span id="synth-algorithm-9"><a href="#synth-algorithm-9"></a>  _ <span class="op">&lt;&gt;</span> (<span class="dt">Left</span> b) <span class="ot">=</span> <span class="dt">Left</span> b</span>
-<span id="synth-algorithm-10"><a href="#synth-algorithm-10"></a>  (<span class="dt">Right</span> a) <span class="op">&lt;&gt;</span> (<span class="dt">Right</span> b) <span class="ot">=</span> <span class="dt">Right</span> (a <span class="op">&lt;&gt;</span> b)</span>
-<span id="synth-algorithm-11"><a href="#synth-algorithm-11"></a></span>
-<span id="synth-algorithm-12"><a href="#synth-algorithm-12"></a><span class="kw">instance</span> <span class="dt">Monoid</span> (<span class="dt">Either</span> <span class="dt">Text</span> <span class="dt">Algorithm</span>) <span class="kw">where</span></span>
-<span id="synth-algorithm-13"><a href="#synth-algorithm-13"></a>  <span class="fu">mempty</span> <span class="ot">=</span> <span class="fu">return</span> <span class="fu">mempty</span></span></code></pre></div>
+<span id="synth-algorithm-7"><a href="#synth-algorithm-7"></a><span class="kw">newtype</span> <span class="dt">HandleError</span> a <span class="ot">=</span> <span class="dt">Handle</span> {<span class="ot"> unHandle ::</span> <span class="dt">Either</span> <span class="dt">Text</span> a }</span>
+<span id="synth-algorithm-8"><a href="#synth-algorithm-8"></a>    <span class="kw">deriving</span> (<span class="dt">Functor</span>, <span class="dt">Applicative</span>, <span class="dt">Monad</span>, <span class="dt">MonadError</span> <span class="dt">Text</span>)</span>
+<span id="synth-algorithm-9"><a href="#synth-algorithm-9"></a></span>
+<span id="synth-algorithm-10"><a href="#synth-algorithm-10"></a><span class="kw">instance</span> <span class="dt">Semigroup</span> a <span class="ot">=&gt;</span> <span class="dt">Semigroup</span> (<span class="dt">HandleError</span> a) <span class="kw">where</span></span>
+<span id="synth-algorithm-11"><a href="#synth-algorithm-11"></a>  <span class="dt">Handle</span> (<span class="dt">Left</span> a) <span class="op">&lt;&gt;</span> _ <span class="ot">=</span> <span class="dt">Handle</span> <span class="op">$</span> <span class="dt">Left</span> a</span>
+<span id="synth-algorithm-12"><a href="#synth-algorithm-12"></a>  _ <span class="op">&lt;&gt;</span> <span class="dt">Handle</span> (<span class="dt">Left</span> b) <span class="ot">=</span> <span class="dt">Handle</span> <span class="op">$</span> <span class="dt">Left</span> b</span>
+<span id="synth-algorithm-13"><a href="#synth-algorithm-13"></a>  <span class="dt">Handle</span> (<span class="dt">Right</span> a) <span class="op">&lt;&gt;</span> <span class="dt">Handle</span> (<span class="dt">Right</span> b) <span class="ot">=</span> <span class="dt">Handle</span> <span class="op">$</span> <span class="dt">Right</span> (a <span class="op">&lt;&gt;</span> b)</span>
+<span id="synth-algorithm-14"><a href="#synth-algorithm-14"></a></span>
+<span id="synth-algorithm-15"><a href="#synth-algorithm-15"></a><span class="kw">instance</span> <span class="dt">Monoid</span> a <span class="ot">=&gt;</span> <span class="dt">Monoid</span> (<span class="dt">HandleError</span> a) <span class="kw">where</span></span>
+<span id="synth-algorithm-16"><a href="#synth-algorithm-16"></a>  <span class="fu">mempty</span> <span class="ot">=</span> <span class="dt">Handle</span> <span class="op">$</span> <span class="dt">Right</span> <span class="fu">mempty</span></span></code></pre></div>
 <h3 id="synthesis-module">Synthesis Module</h3>
 <p><em>file: «src/Synthesis.hs»=</em></p>
 <div class="sourceCode" id="cb7"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb7-1"><a href="#cb7-1"></a><span class="ot">{-# LANGUAGE DataKinds,GeneralizedNewtypeDeriving #-}</span></span>
@@ -733,8 +737,8 @@ code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warni
 <span id="cb7-37"><a href="#cb7-37"></a></span>
 <span id="cb7-38"><a href="#cb7-38"></a>noTwiddleFFT</span>
 <span id="cb7-39"><a href="#cb7-39"></a><span class="ot">    ::</span> <span class="dt">RealFloat</span> a</span>
-<span id="cb7-40"><a href="#cb7-40"></a>    <span class="ot">=&gt;</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">Array</span> (<span class="dt">Complex</span> a) <span class="ot">-&gt;</span> <span class="dt">Array</span> (<span class="dt">Complex</span> a) <span class="ot">-&gt;</span> <span class="dt">Either</span> <span class="dt">Text</span> <span class="dt">Algorithm</span></span>
-<span id="cb7-41"><a href="#cb7-41"></a>noTwiddleFFT n inp out <span class="ot">=</span> <span class="kw">do</span></span>
+<span id="cb7-40"><a href="#cb7-40"></a>    <span class="ot">=&gt;</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">Array</span> (<span class="dt">Complex</span> a) <span class="ot">-&gt;</span> <span class="dt">Array</span> (<span class="dt">Complex</span> a) <span class="ot">-&gt;</span> <span class="dt">HandleError</span> <span class="dt">Algorithm</span></span>
+<span id="cb7-41"><a href="#cb7-41"></a>noTwiddleFFT n inp out <span class="ot">=</span> <span class="dt">Handle</span> <span class="op">$</span> <span class="kw">do</span></span>
 <span id="cb7-42"><a href="#cb7-42"></a>  <span class="kw">let</span> codelet <span class="ot">=</span> <span class="dt">Codelet</span> <span class="dt">NoTwiddle</span> n</span>
 <span id="cb7-43"><a href="#cb7-43"></a>      f <span class="ot">=</span> <span class="dt">Function</span> (codeletName codelet)<span class="ot"> ::</span> <span class="dt">NoTwiddleCodelet</span> a</span>
 <span id="cb7-44"><a href="#cb7-44"></a>  plan <span class="ot">&lt;-</span> planNoTwiddle f inp out</span>
@@ -742,8 +746,8 @@ code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warni
 <span id="cb7-46"><a href="#cb7-46"></a></span>
 <span id="cb7-47"><a href="#cb7-47"></a>twiddleFFT</span>
 <span id="cb7-48"><a href="#cb7-48"></a><span class="ot">    ::</span> <span class="dt">RealFloat</span> a</span>
-<span id="cb7-49"><a href="#cb7-49"></a>    <span class="ot">=&gt;</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">Array</span> (<span class="dt">Complex</span> a) <span class="ot">-&gt;</span> <span class="dt">Array</span> (<span class="dt">Complex</span> a) <span class="ot">-&gt;</span> <span class="dt">Either</span> <span class="dt">Text</span> <span class="dt">Algorithm</span></span>
-<span id="cb7-50"><a href="#cb7-50"></a>twiddleFFT n inp twiddle <span class="ot">=</span> <span class="kw">do</span></span>
+<span id="cb7-49"><a href="#cb7-49"></a>    <span class="ot">=&gt;</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">Array</span> (<span class="dt">Complex</span> a) <span class="ot">-&gt;</span> <span class="dt">Array</span> (<span class="dt">Complex</span> a) <span class="ot">-&gt;</span> <span class="dt">HandleError</span> <span class="dt">Algorithm</span></span>
+<span id="cb7-50"><a href="#cb7-50"></a>twiddleFFT n inp twiddle <span class="ot">=</span> <span class="dt">Handle</span> <span class="op">$</span> <span class="kw">do</span></span>
 <span id="cb7-51"><a href="#cb7-51"></a>  <span class="kw">let</span> codelet <span class="ot">=</span> <span class="dt">Codelet</span> <span class="dt">Twiddle</span> n</span>
 <span id="cb7-52"><a href="#cb7-52"></a>      f <span class="ot">=</span> <span class="dt">Function</span> (codeletName codelet)<span class="ot"> ::</span> <span class="dt">TwiddleCodelet</span> a</span>
 <span id="cb7-53"><a href="#cb7-53"></a>  plan <span class="ot">&lt;-</span> planTwiddle f inp twiddle</span>
@@ -751,8 +755,8 @@ code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warni
 <span id="cb7-55"><a href="#cb7-55"></a></span>
 <span id="cb7-56"><a href="#cb7-56"></a>nFactorFFT</span>
 <span id="cb7-57"><a href="#cb7-57"></a><span class="ot">    ::</span> <span class="dt">RealFloat</span> a</span>
-<span id="cb7-58"><a href="#cb7-58"></a>    <span class="ot">=&gt;</span> [<span class="dt">Int</span>] <span class="ot">-&gt;</span> <span class="dt">Array</span> (<span class="dt">Complex</span> a) <span class="ot">-&gt;</span> <span class="dt">Array</span> (<span class="dt">Complex</span> a) <span class="ot">-&gt;</span> <span class="dt">Either</span> <span class="dt">Text</span> <span class="dt">Algorithm</span></span>
-<span id="cb7-59"><a href="#cb7-59"></a>nFactorFFT [] _ _ <span class="ot">=</span> <span class="fu">return</span> <span class="fu">mempty</span></span>
+<span id="cb7-58"><a href="#cb7-58"></a>    <span class="ot">=&gt;</span> [<span class="dt">Int</span>] <span class="ot">-&gt;</span> <span class="dt">Array</span> (<span class="dt">Complex</span> a) <span class="ot">-&gt;</span> <span class="dt">Array</span> (<span class="dt">Complex</span> a) <span class="ot">-&gt;</span> <span class="dt">HandleError</span> <span class="dt">Algorithm</span></span>
+<span id="cb7-59"><a href="#cb7-59"></a>nFactorFFT [] _ _ <span class="ot">=</span> <span class="fu">mempty</span></span>
 <span id="cb7-60"><a href="#cb7-60"></a>nFactorFFT [x] inp out <span class="ot">=</span> noTwiddleFFT x inp out</span>
 <span id="cb7-61"><a href="#cb7-61"></a>nFactorFFT (x<span class="op">:</span>xs) inp out <span class="ot">=</span> <span class="kw">do</span></span>
 <span id="cb7-62"><a href="#cb7-62"></a>    <span class="kw">let</span> n <span class="ot">=</span> <span class="fu">product</span> xs</span>
@@ -762,16 +766,18 @@ code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warni
 <span id="cb7-66"><a href="#cb7-66"></a>            out&#39; <span class="ot">&lt;-</span> reshape [n, x] <span class="op">=&lt;&lt;</span> select <span class="dv">1</span> i out</span>
 <span id="cb7-67"><a href="#cb7-67"></a>            nFactorFFT xs (transpose inp&#39;) out&#39;</span>
 <span id="cb7-68"><a href="#cb7-68"></a>                <span class="op">&lt;&gt;</span> twiddleFFT x (transpose out&#39;) w_array</span>
-<span id="cb7-69"><a href="#cb7-69"></a>                <span class="op">&lt;&gt;</span> <span class="dt">Right</span> (defineTwiddles [n, x])</span>
+<span id="cb7-69"><a href="#cb7-69"></a>                <span class="op">&lt;&gt;</span> <span class="dt">Handle</span> (<span class="dt">Right</span> (defineTwiddles [n, x]))</span>
 <span id="cb7-70"><a href="#cb7-70"></a></span>
 <span id="cb7-71"><a href="#cb7-71"></a>    l <span class="ot">&lt;-</span> shape inp <span class="op">!?</span> <span class="dv">1</span></span>
-<span id="cb7-72"><a href="#cb7-72"></a>    <span class="fu">mconcat</span> (<span class="fu">map</span> subfft [<span class="dv">0</span><span class="op">..</span>(l<span class="op">-</span><span class="dv">1</span>)])</span>
+<span id="cb7-72"><a href="#cb7-72"></a>    <span class="fu">foldMap</span> subfft [<span class="dv">0</span><span class="op">..</span>(l<span class="op">-</span><span class="dv">1</span>)]</span>
 <span id="cb7-73"><a href="#cb7-73"></a></span>
 <span id="cb7-74"><a href="#cb7-74"></a><span class="ot">factors ::</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> [<span class="dt">Int</span>]</span>
-<span id="cb7-75"><a href="#cb7-75"></a>factors n <span class="ot">=</span> <span class="fu">sort</span> <span class="op">$</span> <span class="fu">concatMap</span> (\(i, m) <span class="ot">-&gt;</span> <span class="fu">take</span> m <span class="op">$</span> <span class="fu">repeat</span> (<span class="fu">fromIntegral</span><span class="ot"> i ::</span> <span class="dt">Int</span>)) (factorise <span class="op">$</span> <span class="fu">fromIntegral</span> n)</span>
-<span id="cb7-76"><a href="#cb7-76"></a></span>
-<span id="cb7-77"><a href="#cb7-77"></a><span class="ot">fullFactorFFT ::</span> <span class="dt">RealFloat</span> a <span class="ot">=&gt;</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">Array</span> (<span class="dt">Complex</span> a) <span class="ot">-&gt;</span> <span class="dt">Array</span> (<span class="dt">Complex</span> a) <span class="ot">-&gt;</span> <span class="dt">Either</span> <span class="dt">Text</span> <span class="dt">Algorithm</span></span>
-<span id="cb7-78"><a href="#cb7-78"></a>fullFactorFFT n <span class="ot">=</span> nFactorFFT (factors n)</span></code></pre></div>
+<span id="cb7-75"><a href="#cb7-75"></a>factors n <span class="ot">=</span> <span class="fu">sort</span> <span class="op">$</span> <span class="fu">concatMap</span> expandFactors (factorise <span class="op">$</span> <span class="fu">fromIntegral</span> n)</span>
+<span id="cb7-76"><a href="#cb7-76"></a>    <span class="kw">where</span> expandFactors (prime, m) <span class="ot">=</span> <span class="fu">take</span> (<span class="fu">fromIntegral</span> m)</span>
+<span id="cb7-77"><a href="#cb7-77"></a>                                   <span class="op">$</span> <span class="fu">repeat</span> (<span class="fu">fromIntegral</span><span class="ot"> prime ::</span> <span class="dt">Int</span>)</span>
+<span id="cb7-78"><a href="#cb7-78"></a></span>
+<span id="cb7-79"><a href="#cb7-79"></a><span class="ot">fullFactorFFT ::</span> <span class="dt">RealFloat</span> a <span class="ot">=&gt;</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">Array</span> (<span class="dt">Complex</span> a) <span class="ot">-&gt;</span> <span class="dt">Array</span> (<span class="dt">Complex</span> a) <span class="ot">-&gt;</span> <span class="dt">Either</span> <span class="dt">Text</span> <span class="dt">Algorithm</span></span>
+<span id="cb7-80"><a href="#cb7-80"></a>fullFactorFFT n x y <span class="ot">=</span> unHandle <span class="op">$</span> nFactorFFT (factors n) x y</span></code></pre></div>
 <h2 id="appendix-miscellaneous-functions">Appendix: Miscellaneous functions</h2>
 <p><em>file: «src/Lib.hs»=</em></p>
 <div class="sourceCode" id="cb8"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb8-1"><a href="#cb8-1"></a><span class="kw">module</span> <span class="dt">Lib</span> <span class="kw">where</span></span>

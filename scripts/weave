@@ -21,7 +21,7 @@ usage () {
     echo
     echo "By default, this builds HTML output from the list of Markdown"
     echo "sources. The output defaults to './public/index.html'."
-    echo "If `--pdf` is chosen, the default output is set to 'report.pdf'."
+    echo "If \`--pdf\` is chosen, the default output is set to 'report.pdf'."
     echo
     echo "options:"
     echo "  --html           generate HTML"
