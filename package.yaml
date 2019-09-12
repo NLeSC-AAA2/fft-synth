@@ -1,7 +1,7 @@
 name:                fft-synth
 version:             0.1.0.0
 github:              "NLeSC-AAA3/fft-synth"
-license:             GPL3
+license:             GPL-3
 author:              "Johan Hidding"
 maintainer:          "j.hidding@esciencecenter.nl"
 copyright:           "2019 Netherlands eScience Center"
@@ -39,7 +39,7 @@ library:
   source-dirs: src
 
 executables:
-  fft-synth-exe:
+  fft-synth:
     main:                Main.hs
     source-dirs:         app
     ghc-options:

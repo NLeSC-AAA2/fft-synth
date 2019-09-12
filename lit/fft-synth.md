@@ -679,6 +679,8 @@ data Algorithm = Algorithm
   { codelets   :: Set Codelet
   , twiddles   :: Set Shape
   , statements :: [Stmt] }
+
+type TopLevelFFT a = Function [ Array a, Array a ]
 ```
 
 To build up an algorithm from pieces, we derive an instance of `Monoid` for both `Algorithm` and `Either Text Algorithm`, the latter handling errors during code generation. We can use the `<>` operator to take the union of the sets of codelets and twiddles, as well as appending to the list of statements.

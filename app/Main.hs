@@ -18,9 +18,8 @@ import TwiddleFactors
 
 main :: IO ()
 main = do
+  T.IO.putStrLn genMacros
   printFFT 20
-  putStrLn ""
-  printFFT 12
 
 generateTwiddle :: Text -> Shape -> IO Text
 generateTwiddle typeName shape = do
@@ -28,14 +27,17 @@ generateTwiddle typeName shape = do
       def = "__constant " <> typeName <> " " <> factorsName shape <> "["
             <> tshow (2 * (product shape - head shape)) <> "] = {\n"
             <> T.intercalate "," (map showComplex (V.toList $ makeTwiddle shape))
-            <> "\n}"
+            <> "\n};"
   indent def
 
 writeAlgorithm :: Algorithm -> IO Text
 writeAlgorithm Algorithm{..} = do
   twdefs <- T.unlines <$> mapM (generateTwiddle "float") (S.toList twiddles)
   codes  <- T.unlines <$> mapM (gen defaultArgs) (S.toList codelets)
-  return $ twdefs <> codes <> T.unlines (map generate statements)
+  return $ twdefs <> codes 
+        <> "void fft(float const *input, float *output) {\n"
+        <> T.unlines (map (("    " <>) . generate) statements)
+        <> "}"
 
 printFFT :: Int -> IO ()
 printFFT n = do

@@ -14,7 +14,7 @@ bug-reports:    https://github.com/NLeSC-AAA3/fft-synth/issues
 author:         Johan Hidding
 maintainer:     j.hidding@esciencecenter.nl
 copyright:      2019 Netherlands eScience Center
-license:        GPL3
+license:        GPL-3
 license-file:   LICENSE
 build-type:     Simple
 extra-source-files:
@@ -49,7 +49,7 @@ library
     , vector
   default-language: Haskell2010
 
-executable fft-synth-exe
+executable fft-synth
   main-is: Main.hs
   other-modules:
       Paths_fft_synth

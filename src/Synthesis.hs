@@ -63,6 +63,8 @@ data Algorithm = Algorithm
   { codelets   :: Set Codelet
   , twiddles   :: Set Shape
   , statements :: [Stmt] }
+
+type TopLevelFFT a = Function [ Array a, Array a ]
 -- ------ end
 -- ------ begin <<synth-algorithm>>[1]
 instance Semigroup Algorithm where

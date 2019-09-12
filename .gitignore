@@ -4,3 +4,6 @@ stack.yaml.lock
 *~
 *.swp
 .#*
+dist
+dist-newstyle
+
