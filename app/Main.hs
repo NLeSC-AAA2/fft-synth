@@ -41,7 +41,6 @@ writeAlgorithm Algorithm{..} = do
 
 printFFT :: Int -> IO ()
 printFFT n = do
-  T.IO.putStrLn $ "FFT" <> tshow n <> ":"
   let shape = [n, 1 :: Int]
       a = Array "input" shape (fromShape shape 1) 0 :: Array (Complex Double)
       b = Array "output" shape (fromShape shape 1) 0 :: Array (Complex Double)

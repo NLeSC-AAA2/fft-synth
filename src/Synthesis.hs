@@ -42,8 +42,8 @@ planNoTwiddle f inp out = do
   ovs <- stride out !? 1
   return $ Apply f (ArrayRef (realPart inp) :+: ArrayRef (imagPart inp) :+:
                     ArrayRef (realPart out) :+: ArrayRef (imagPart out) :+:
-                    Literal is :+: Literal os :+: Literal v :+: Literal ivs :+:
-                    Literal ovs :+: Empty)
+                    Literal (2 * is) :+: Literal (2 * os) :+: Literal v :+:
+                    Literal (2 * ivs) :+: Literal (2 * ovs) :+: Empty)
 -- ------ end
 -- ------ begin <<synth-planTwiddle>>[0]
 planTwiddle
@@ -55,8 +55,8 @@ planTwiddle f inp twiddle = do
   me  <- shape inp !? 1
   ms  <- stride inp !? 1
   return $ Apply f (ArrayRef (realPart inp) :+: ArrayRef (imagPart inp) :+:
-                    ArrayRef (realPart twiddle) :+: Literal rs :+: Literal 0 :+:
-                    Literal me :+: Literal ms :+: Empty)
+                    ArrayRef (realPart twiddle) :+: Literal (2 * rs) :+: Literal 0 :+:
+                    Literal me :+: Literal (2 * ms) :+: Empty)
 -- ------ end
 -- ------ begin <<synth-algorithm>>[0]
 data Algorithm = Algorithm
