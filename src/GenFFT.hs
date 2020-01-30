@@ -90,5 +90,5 @@ genTwiddle radix args = do
 gen :: GenFFTArgs -> Codelet -> IO Text
 gen args codelet@Codelet{..} = do
   let name' = codeletName codelet
-  genFFT (codeletPrefix codelet) $ ["-n", tshow codeletRadix] <> argList args{name=Just name'}
+  genFFT (codeletPrefix codelet) $ ["-n", tshow codeletRadix] <> argList args{name=Just name', opencl=True}
 -- ------ end

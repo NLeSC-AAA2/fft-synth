@@ -93,10 +93,8 @@ let generate n =
   let vm = CVar m and vmb = CVar mb and vme = CVar me in
 
   let fun_prefix =
-    if !Magic.opencl then "__kernel " else
     if !Magic.standalone then "" else "static "
-  and decl_prefix =
-    if !Magic.opencl then "__global " else ""
+  and decl_prefix = ""
   and const_prefix =
     if !Magic.opencl then "__constant " else ""
   in

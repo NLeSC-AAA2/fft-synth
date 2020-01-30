@@ -109,10 +109,8 @@ let generate n =
   let annot = nonstandard_optimizer list_of_buddy_stores odag in
 
   let fun_prefix =
-    if !Magic.opencl then "__kernel " else
     if !Magic.standalone then "" else "static "
-  and decl_prefix =
-    if !Magic.opencl then "__global " else ""
+  and decl_prefix = ""
   in
 
   let body = Block (
