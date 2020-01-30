@@ -1,0 +1,3 @@
+#!/usr/bin/env sh
+BASEPATH="$( cd "$(dirname "$0")/" ; pwd -P )"
+exec cabal -v0 --project-file="$BASEPATH/cabal.project" v2-run "exe:fft-synth" -- "$@"
