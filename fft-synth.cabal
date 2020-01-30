@@ -1,11 +1,4 @@
 cabal-version: 1.12
-
--- This file has been generated from package.yaml by hpack version 0.31.2.
---
--- see: https://github.com/sol/hpack
---
--- hash: e4e81e2addc034fbd37580335a61ad55001d18f4a872811ef1083b91002defd1
-
 name:           fft-synth
 version:        0.1.0.0
 description:    Please see the README on GitHub at <https://github.com/githubuser/fft-synth#readme>
