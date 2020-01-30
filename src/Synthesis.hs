@@ -21,7 +21,7 @@ import Control.Monad.Except
 import Codelet
 import TwiddleFactors
 
-import Math.NumberTheory.Primes.Factorisation (factorise)
+import Math.NumberTheory.Primes (factorise, unPrime)
 
 (!?) :: MonadError Text m => [a] -> Int -> m a
 [] !? i = throwError $ "List index error: list " <> tshow (i + 1) <> " too short."
@@ -125,9 +125,8 @@ nFactorFFT (x:xs) inp out = do
     foldMap subfft [0..(l-1)]
 
 factors :: Int -> [Int]
-factors n = sort $ concatMap expandFactors (factorise $ fromIntegral n)
-    where expandFactors (prime, m) = take (fromIntegral m)
-                                   $ repeat (fromIntegral prime :: Int)
+factors n = sort $ concatMap expandFactors (factorise n)
+    where expandFactors (prime, m) = replicate (fromIntegral m) (unPrime prime)
 
 fullFactorFFT :: RealFloat a => Int -> Array (Complex a) -> Array (Complex a) -> Either Text Algorithm
 fullFactorFFT n x y = unHandle $ nFactorFFT (factors n) x y
