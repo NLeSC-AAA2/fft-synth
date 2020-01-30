@@ -9,6 +9,7 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T.IO
 import qualified Data.Vector.Unboxed as V
+import Data.List (transpose)
 
 import Lib
 import AST
@@ -26,10 +27,10 @@ main = do
     (n:factors) -> printFFT (read n) (map read factors)
 
 generateTwiddle :: Text -> Shape -> IO Text
-generateTwiddle typeName shape = do
+generateTwiddle typeName shape@(dim:dims) = do
   let showComplex z = tshow (realPart z) <> ", " <> tshow (imagPart z)
       def = "__constant " <> typeName <> " " <> factorsName shape <> "["
-            <> tshow (2 * (product shape - head shape)) <> "] = {\n"
+            <> tshow (2 * (product ((dim-1) : dims))) <> "] = {\n"
             <> T.intercalate "," (map showComplex (V.toList $ makeTwiddle shape))
             <> "\n};"
   indent def

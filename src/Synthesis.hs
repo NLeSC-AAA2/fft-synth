@@ -113,13 +113,13 @@ nFactorFFT [] _ _ = mempty
 nFactorFFT [x] inp out = noTwiddleFFT x inp out
 nFactorFFT (x:xs) inp out = do
     let n = product xs
-        w_array = Array (factorsName [n, x]) [n, x] (fromShape [n, x] 1) 0
+        w_array = Array (factorsName [x, n]) [x, n] (fromShape [x, n] 1) 0
         subfft i = do
             inp' <- reshape [x, n] =<< select 1 i inp
             out' <- reshape [n, x] =<< select 1 i out
             nFactorFFT xs (transpose inp') out'
                 <> twiddleFFT x (transpose out') w_array
-                <> Handle (Right (defineTwiddles [n, x]))
+                <> Handle (Right (defineTwiddles [x, n]))
 
     l <- shape inp !? 1
     foldMap subfft [0..(l-1)]
