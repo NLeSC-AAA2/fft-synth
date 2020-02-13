@@ -367,7 +367,7 @@ genTwiddle radix args = do
 gen :: GenFFTArgs -> Codelet -> IO Text
 gen args codelet@Codelet{..} = do
   let name' = codeletName codelet
-  genFFT (codeletPrefix codelet) $ ["-n", tshow codeletRadix] <> argList args{name=Just name'}
+  genFFT (codeletPrefix codelet) $ ["-n", tshow codeletRadix] <> argList args{name=Just name', opencl=True}
 ```
 
 ## Twiddle factors
@@ -398,6 +398,8 @@ import qualified Data.Vector.Unboxed as V
 
 import Array
 import Lib
+
+import Data.List
 
 <<twiddle-factors-w>>
 <<twiddle-factors-multi-w>>
@@ -431,8 +433,14 @@ To generate the list of indices (lists are lazy, so this should be efficient eno
 indices :: Shape -> [[Int]]
 indices = foldr (\ n -> concatMap (\ idcs -> map (: idcs) [0 .. n-1])) [[]]
 
+make2DList :: Int -> [[Int]] -> [[[Int]]]
+make2DList r l = chunks r $ l
+  where
+    chunks _ [] = []
+    chunks r xs = take r xs : chunks r (drop r xs)
+
 makeTwiddle :: Shape -> Vector (Complex Double)
-makeTwiddle shape = V.fromList $ map (multiW shape) $ drop (head shape) $ indices shape
+makeTwiddle shape = V.fromList $ map (multiW shape) $ concat $ map (drop 1) $ make2DList (head shape) $ indices shape
 ```
 
 ## Unit tests
@@ -729,7 +737,7 @@ import Control.Monad.Except
 import Codelet
 import TwiddleFactors
 
-import Math.NumberTheory.Primes.Factorisation (factorise)
+import Math.NumberTheory.Primes (factorise, unPrime)
 
 (!?) :: MonadError Text m => [a] -> Int -> m a
 [] !? i = throwError $ "List index error: list " <> tshow (i + 1) <> " too short."
@@ -769,21 +777,20 @@ nFactorFFT [] _ _ = mempty
 nFactorFFT [x] inp out = noTwiddleFFT x inp out
 nFactorFFT (x:xs) inp out = do
     let n = product xs
-        w_array = Array (factorsName [n, x]) [n, x] (fromShape [n, x] 1) 0
+        w_array = Array (factorsName [x, n]) [n, x] (fromShape [n, x] 1) 0
         subfft i = do
             inp' <- reshape [x, n] =<< select 1 i inp
             out' <- reshape [n, x] =<< select 1 i out
             nFactorFFT xs (transpose inp') out'
                 <> twiddleFFT x (transpose out') w_array
-                <> Handle (Right (defineTwiddles [n, x]))
+                <> Handle (Right (defineTwiddles [x, n]))
 
     l <- shape inp !? 1
     foldMap subfft [0..(l-1)]
 
 factors :: Int -> [Int]
-factors n = sort $ concatMap expandFactors (factorise $ fromIntegral n)
-    where expandFactors (prime, m) = take (fromIntegral m)
-                                   $ repeat (fromIntegral prime :: Int)
+factors n = sort $ concatMap expandFactors (factorise n)
+    where expandFactors (prime, m) = replicate (fromIntegral m) (unPrime prime)
 
 fullFactorFFT :: RealFloat a => Int -> Array (Complex a) -> Array (Complex a) -> Either Text Algorithm
 fullFactorFFT n x y = unHandle $ nFactorFFT (factors n) x y

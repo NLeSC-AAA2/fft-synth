@@ -44,7 +44,7 @@ testTwiddleFactors = do
         it "creates an index list" $ do
             indices [2, 2] `shouldBe` [[0, 0], [1, 0], [0, 1], [1, 1]]
             indices [3, 1] `shouldBe` [[0, 0], [1, 0], [2, 0]]
-
+    
     describe "TwiddleFactors.makeTwiddle" $
         it "Generates twiddle factors" $ do
             makeTwiddle [2, 2] `shouldSatisfy` closeTo
